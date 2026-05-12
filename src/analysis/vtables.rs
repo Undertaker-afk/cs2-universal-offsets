@@ -35,7 +35,7 @@ use super::InterfaceMap;
 use super::rtti;
 
 /// Dump of one interface's virtual function table.
-#[derive(Debug, Clone, Default, serde::Serialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct VTableInfo {
     /// RVA of the vftable itself within the *owning* module (may differ
     /// from the interface instance's module if the vftable was emitted
@@ -53,7 +53,7 @@ pub struct VTableInfo {
     pub methods: Vec<VTableMethod>,
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct VTableMethod {
     pub module: String,
     pub rva: u64,

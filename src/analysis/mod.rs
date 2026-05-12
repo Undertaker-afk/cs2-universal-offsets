@@ -35,7 +35,7 @@ pub use skinchanger::*;
 pub use vtables::*;
 
 /// Aggregated output of every analysis stage.
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct AnalysisResult {
     pub buttons: ButtonMap,
     pub interfaces: InterfaceMap,
@@ -54,13 +54,17 @@ pub struct AnalysisResult {
 /// Each stage is independent — a failure in one (e.g. a missing module) is
 /// logged and replaced with that stage's [`Default`] value so subsequent
 /// stages can still complete.
+use crate::ui;
+
 pub fn analyze_all<P: Process + MemoryView>(
     process: &mut P,
     show_convar_values: bool,
 ) -> Result<AnalysisResult> {
+    ui::progress(10, 100, "dumping buttons");
     let buttons = analyze(process, buttons);
     info!("found {} buttons", buttons.len());
 
+    ui::progress(20, 100, "dumping convars");
     let convars = match convars(process, show_convar_values) {
         Ok(c) => {
             info!("found {} convars", c.len());
@@ -72,6 +76,7 @@ pub fn analyze_all<P: Process + MemoryView>(
         }
     };
 
+    ui::progress(40, 100, "dumping game events");
     let game_events = match game_events(process) {
         Ok(ge) => {
             info!("found {} game events", ge.len());
@@ -83,6 +88,7 @@ pub fn analyze_all<P: Process + MemoryView>(
         }
     };
 
+    ui::progress(60, 100, "dumping resources");
     let resources = match resources(process) {
         Ok(r) => {
             info!("found {} resource types", r.len());
@@ -94,6 +100,7 @@ pub fn analyze_all<P: Process + MemoryView>(
         }
     };
 
+    ui::progress(80, 100, "dumping interfaces");
     let interfaces = analyze(process, interfaces);
     info!(
         "found {} interfaces across {} modules",
@@ -108,6 +115,7 @@ pub fn analyze_all<P: Process + MemoryView>(
         offsets.len(),
     );
 
+    ui::progress(90, 100, "dumping schemas");
     let schemas = analyze(process, schemas);
     let (class_count, enum_count) = schemas
         .values()

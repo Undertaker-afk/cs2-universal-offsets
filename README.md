@@ -68,10 +68,12 @@ Useful flags:
 
 * **Expanded xsip-style SDK**: Generates a file-per-class C++ SDK in `include/xsip_sdk`.
 * **Interface Dumper**: Per-module `constexpr` interface offsets in `include/xsip_interfaces`.
-* **Confidence Scoring**: Each signature hit now includes a confidence score (0-100%).
-* **Hierarchy Visualization**: Generates a Graphviz `hierarchy.dot` of the engine's class tree.
-* **Advanced Reporting**: Comprehensive reports in JSON, Markdown, and HTML formats.
-* **Skeleton Analysers**: Added groundwork for ConVar, GameEvent, and ResourceSystem dumping.
+* **Confidence Scoring**: Each signature hit now includes a confidence score (0-100%) based on uniqueness and length.
+* **Hierarchy Visualization**: Generates Graphviz `hierarchy.dot` and an HTML tree of the engine's class inheritance.
+* **Advanced Reporting**: Comprehensive reports in JSON, Markdown, and interactive HTML formats.
+* **ConVar Dumper**: Extracts registered ConVars with descriptions, flags, and optional current values.
+* **GameEvent Registry**: Identifies event managers and prepares for full event schema extraction.
+* **Function Prototype Recovery**: Uses `iced-x86` to perform basic static analysis on found signatures to estimate argument lists.
 
 CI publishes a release binary on every `v*` tag — see the latest under
 [Releases](../../releases).

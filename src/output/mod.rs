@@ -29,6 +29,8 @@ pub mod xsip_interfaces;
 pub mod xsip_sdk;
 pub mod hierarchy;
 pub mod reports;
+pub mod convars;
+pub mod resources;
 
 enum Item<'a> {
     Buttons(&'a ButtonMap),

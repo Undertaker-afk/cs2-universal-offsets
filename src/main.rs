@@ -157,6 +157,7 @@ fn main() -> Result<()> {
     if !args.skip_offsets {
         ui::section("Offsets, interfaces, buttons, schemas, convars, events");
         ui::sound(ui::Cue::Step);
+        ui::progress(0, 100, "initializing analysers");
         match analysis::analyze_all(&mut process, args.show_convar_values) {
             Ok(result) => {
                 ui::ok(&format!(
@@ -224,18 +225,19 @@ fn main() -> Result<()> {
                     ));
                 }
 
-                // Stage 3.5: Advanced reports & Hierarchy
-                if let Err(e) = output::reports::generate_reports(
-                    &session_dir,
-                    &result,
-                    &None, // updated later
-                    args.html_report,
-                ) {
-                    ui::warn(&format!("reports generator failed: {}", e));
-                }
+                // Stage 3.5: Advanced reports & Hierarchy (initial)
 
                 if let Err(e) = output::hierarchy::generate(&session_dir, &result.schemas) {
                     ui::warn(&format!("hierarchy generator failed: {}", e));
+                }
+
+                if !result.convars.is_empty() {
+                    let hpp = output::convars::render_hpp(&result.convars, args.show_convar_values);
+                    let _ = fs::write(sdk_dir.join("convars.hpp"), hpp);
+                }
+
+                if !result.resources.is_empty() {
+                    let _ = output::resources::dump(&session_dir, &result.resources);
                 }
 
                 drop(out);
@@ -426,6 +428,18 @@ fn main() -> Result<()> {
         session_dir.join("manifest.json"),
         serde_json::to_string_pretty(&manifest)?,
     )?;
+
+    // --- stage 4: Final Reports -------------------------------------------
+    if let Some(result) = analysis_result.as_ref() {
+        if let Err(e) = output::reports::generate_reports(
+            &session_dir,
+            result,
+            &sig_report,
+            args.html_report,
+        ) {
+            ui::warn(&format!("final reports generator failed: {}", e));
+        }
+    }
 
     // --- summary -----------------------------------------------------------
     ui::section("Summary");

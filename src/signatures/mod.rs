@@ -17,6 +17,7 @@ use std::collections::BTreeMap;
 
 
 use anyhow::{Context, Result, anyhow};
+use iced_x86::{Decoder, DecoderOptions, Instruction, Mnemonic, Register};
 use memflow::prelude::v1::*;
 use pelite::pe64::{Pe, PeView};
 
@@ -471,13 +472,15 @@ fn scan_pattern(mc: &ModuleCache, sig: &Signature) -> SignatureHit {
 
     let synth = synthesize_pattern(mc, res_rva);
     let confidence = calculate_confidence(&bytes, &mask, matches);
+    let proto = opt_proto(sig.name, sig.prototype)
+        .or_else(|| recover_prototype(mc, res_rva));
 
     SignatureHit {
         name: display_name(sig.name),
         module: mc.name.clone(),
         resolve: kind_name(sig.resolve),
         pattern: sig.needle.to_string(),
-        prototype: opt_proto(sig.name, sig.prototype),
+        prototype: proto,
         ida_tutorial: tutorials::for_signature(sig),
         bytes: capture_prologue(mc, res_rva),
         pattern_synth: synth,
@@ -684,6 +687,55 @@ fn is_prologue(b: &[u8]) -> bool {
         0x40 | 0x41 | 0x48 | 0x4C | 0x55 | 0x53 | 0x56 | 0x57 => true,
         _ => false,
     }
+}
+
+pub(crate) fn recover_prototype(mc: &ModuleCache, rva: u64) -> Option<String> {
+    let lo = rva as usize;
+    let text_hi = (mc.text_rva + mc.text_size) as usize;
+    if lo >= text_hi {
+        return None;
+    }
+
+    let bytes = &mc.image[lo..text_hi.min(lo + 0x200)];
+    let mut decoder = Decoder::with_ip(64, bytes, mc.base + rva, DecoderOptions::NONE);
+
+    let mut instructions = Vec::new();
+    for instruction in &mut decoder {
+        instructions.push(instruction);
+        match instruction.mnemonic() {
+            Mnemonic::Ret | Mnemonic::Retf => break,
+            _ => {}
+        }
+    }
+
+    // Heuristic for argument count based on register usage (RCX, RDX, R8, R9)
+    let mut args = Vec::new();
+    let mut used_rcx = false;
+    let mut used_rdx = false;
+    let mut used_r8 = false;
+    let mut used_r9 = false;
+
+    for instr in &instructions {
+        // Very simple heuristic: if register is read before being written
+        // (ignoring complex control flow)
+        if !used_rcx && is_reg_read(instr, Register::RCX) { used_rcx = true; args.push("void* a1"); }
+        if !used_rdx && is_reg_read(instr, Register::RDX) { used_rdx = true; args.push("void* a2"); }
+        if !used_r8 && is_reg_read(instr, Register::R8) { used_r8 = true; args.push("void* a3"); }
+        if !used_r9 && is_reg_read(instr, Register::R9) { used_r9 = true; args.push("void* a4"); }
+    }
+
+    let args_str = if args.is_empty() { "".to_string() } else { args.join(", ") };
+    Some(format!("void* __fastcall sub_{:X}({})", mc.base + rva, args_str))
+}
+
+fn is_reg_read(instr: &Instruction, reg: Register) -> bool {
+    for i in 0..instr.op_count() {
+        if instr.op_register(i) == reg {
+            // This is a simplification
+            return true;
+        }
+    }
+    false
 }
 
 // ---------------------------------------------------------------------------
