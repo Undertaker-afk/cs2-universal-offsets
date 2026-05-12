@@ -9,7 +9,7 @@ use anyhow::Result;
 use crate::ui;
 
 pub fn dump(out_dir: &Path, interfaces: &InterfaceMap) -> Result<()> {
-    let xsip_interfaces_dir = out_dir.join("xsip_interfaces");
+    let xsip_interfaces_dir = out_dir.join("Interfaces");
     fs::create_dir_all(&xsip_interfaces_dir)?;
 
     let total_modules = interfaces.len();

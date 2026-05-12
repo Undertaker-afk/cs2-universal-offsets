@@ -1,6 +1,5 @@
 use anyhow::{Result, anyhow};
 use memflow::prelude::v1::*;
-use pelite::pe64::Pe;
 use std::collections::BTreeMap;
 
 pub type ResourceTree = BTreeMap<String, Vec<String>>;
@@ -35,28 +34,11 @@ pub fn resources<P: Process + MemoryView>(
     // This logic walks the internal structures to extract ALL registered extensions and active resources.
 
     // 1. Registered Extensions
-    // Usually found via a registration list at some offset.
     let mut extensions = Vec::new();
     for ext in &[
-        ".vmat_c",
-        ".vmdl_c",
-        ".vpcf_c",
-        ".vsnd_c",
-        ".vxml_c",
-        ".vjs_c",
-        ".vcss_c",
-        ".vphys_c",
-        ".vwrld_c",
-        ".vtex_c",
-        ".vseq_c",
-        ".vman_c",
-        ".vcompmat_c",
-        ".vdata_c",
-        ".vprop_c",
-        ".vcloth_c",
-        ".vnav_c",
-        ".vpulse_c",
-        ".vts_c",
+        ".vmat_c", ".vmdl_c", ".vpcf_c", ".vsnd_c", ".vxml_c", ".vjs_c", ".vcss_c", ".vphys_c",
+        ".vwrld_c", ".vtex_c", ".vseq_c", ".vman_c", ".vcompmat_c", ".vdata_c", ".vprop_c",
+        ".vcloth_c", ".vnav_c", ".vpulse_c", ".vts_c",
     ] {
         extensions.push(ext.to_string());
     }
@@ -64,29 +46,18 @@ pub fn resources<P: Process + MemoryView>(
 
     // 2. Map discovery (real memory read)
     let mut maps = Vec::new();
-    if let Ok(client) = process.module_by_name("client.dll") {
-        let buf = process
-            .read_raw(client.base, client.size as usize)
-            .data_part()?;
-        let view = pelite::pe64::PeView::from_bytes(&buf)?;
-        use pelite::pe64::Pe;
-        let mut s = [0u32; 2];
-        if view.scanner().finds_code(
-            pelite::pattern!("48 8d 0d ${'} e8 ? ? ? ? 48 8b 0d ? ? ? ? 48 85 c9 74 13"),
-            &mut s,
-        ) {
-            if let Ok(map_name_ptr) = process
-                .read_ptr(Pointer64::<u64>::from(client.base + s[1]))
-                .data_part()
-            {
-                if !map_name_ptr.is_null() {
-                    if let Ok(name) = process
-                        .read_utf8_lossy(Address::from(map_name_ptr), 256)
-                        .data_part()
-                    {
-                        if !name.is_empty() {
-                            maps.push(name);
-                        }
+    if let Some(&map_name_addr) = sig_hits.get("ActiveMapName_ptr") {
+        if let Ok(map_name_ptr) = process
+            .read_ptr(Pointer64::<u64>::from(map_name_addr))
+            .data_part()
+        {
+            if !map_name_ptr.is_null() {
+                if let Ok(name) = process
+                    .read_utf8_lossy(Address::from(map_name_ptr), 256)
+                    .data_part()
+                {
+                    if !name.is_empty() {
+                        maps.push(name);
                     }
                 }
             }

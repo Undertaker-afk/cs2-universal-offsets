@@ -41,6 +41,22 @@ pub static CS2_SIGNATURES: &[Signature] = &[
         prototype: "",
     },
     Signature {
+        name: "ButtonList_ptr",
+        module: "client.dll",
+        needle: "48 8b 15 ? ? ? ? 48 85 d2 74 ? 48 8b 02 48 85 c0",
+        resolve: RIPREL_3,
+        extra_off: 0,
+        prototype: "",
+    },
+    Signature {
+        name: "ActiveMapName_ptr",
+        module: "client.dll",
+        needle: "48 8D 0D ? ? ? ? E8 ? ? ? ? 48 8B 0D ? ? ? ? 48 85 C9 74 13",
+        resolve: RIPREL_3,
+        extra_off: 0,
+        prototype: "",
+    },
+    Signature {
         name: "RegenerateWeaponSkins",
         module: "client.dll",
         needle: "48 83 EC ? E8 ? ? ? ? 48 85 C0 0F 84 ? ? ? ? 48 8B 10",

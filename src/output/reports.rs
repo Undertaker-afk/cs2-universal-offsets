@@ -1,6 +1,7 @@
 use crate::analysis::AnalysisResult;
 use crate::signatures::SignatureReport;
 use anyhow::Result;
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
@@ -80,7 +81,22 @@ pub fn generate_reports(
     fs::write(out_dir.join("REPORT.md"), md)?;
 
     if html {
-        let html_content = generate_beautiful_html(analysis, sigs, &diff_content);
+        // Collect additional metadata for the HTML report
+        let mut module_meta = BTreeMap::new();
+        let manifest_path = out_dir.join("manifest.json");
+        if let Ok(m_json) = fs::read_to_string(manifest_path) {
+            if let Ok(m_val) = serde_json::from_str::<serde_json::Value>(&m_json) {
+                if let Some(modules) = m_val.get("modules") {
+                    if let Some(m_obj) = modules.as_object() {
+                        for (k, v) in m_obj {
+                            module_meta.insert(k.clone(), v.clone());
+                        }
+                    }
+                }
+            }
+        }
+
+        let html_content = generate_beautiful_html(analysis, sigs, &diff_content, &module_meta);
         fs::write(out_dir.join("report.html"), html_content)?;
     }
 
@@ -91,6 +107,7 @@ fn generate_beautiful_html(
     analysis: &AnalysisResult,
     sigs: &Option<SignatureReport>,
     diff: &str,
+    module_meta: &BTreeMap<String, serde_json::Value>,
 ) -> String {
     let mut sig_rows = String::new();
     if let Some(report) = sigs {
@@ -134,6 +151,27 @@ fn generate_beautiful_html(
             .collect::<Vec<_>>()
             .join(", ");
         event_rows.push_str(&format!("<tr><td>{}</td><td>{}</td></tr>", name, fields));
+    }
+
+    let mut interface_rows = String::new();
+    for (module, ifaces) in &analysis.interfaces {
+        for (name, offset) in ifaces {
+            interface_rows.push_str(&format!(
+                "<tr><td>{}</td><td>{}</td><td><code>{:#X}</code></td></tr>",
+                module, name, offset
+            ));
+        }
+    }
+
+    let mut module_rows = String::new();
+    for (name, meta) in module_meta {
+        let base = meta.get("base").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("-");
+        let size = meta.get("size").and_then(|v: &serde_json::Value| v.as_u64()).unwrap_or(0);
+        let timestamp = meta.get("timestamp").and_then(|v: &serde_json::Value| v.as_u64()).unwrap_or(0);
+        module_rows.push_str(&format!(
+            "<tr><td>{}</td><td><code>{}</code></td><td>{:#X}</td><td><code>{:#X}</code></td></tr>",
+            name, base, size, timestamp
+        ));
     }
 
     let mut resource_sections = String::new();
@@ -338,6 +376,26 @@ fn generate_beautiful_html(
             </table>
         </div>
 
+        <h2>Interfaces</h2>
+        <div class="section-box">
+            <table>
+                <thead><tr><th>Module</th><th>Interface</th><th>Offset</th></tr></thead>
+                <tbody>
+                    {}
+                </tbody>
+            </table>
+        </div>
+
+        <h2>Module Metadata</h2>
+        <div class="section-box">
+            <table>
+                <thead><tr><th>Module</th><th>Base Address</th><th>Size</th><th>PE Timestamp</th></tr></thead>
+                <tbody>
+                    {}
+                </tbody>
+            </table>
+        </div>
+
         <h2>Resource Map</h2>
         <div class="section-box">
             {}
@@ -365,6 +423,8 @@ fn generate_beautiful_html(
         sig_rows,
         convar_rows,
         event_rows,
+        interface_rows,
+        module_rows,
         resource_sections
     )
 }

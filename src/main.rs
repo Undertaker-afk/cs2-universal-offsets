@@ -126,12 +126,13 @@ fn main() -> Result<()> {
 
     let now = Local::now();
     let session_dir = args.output.clone();
-    let sdk_dir = session_dir.join("sdk");
-    let sigs_dir = session_dir.join("signatures");
     let logs_dir = session_dir.join("logs");
-    for d in [&session_dir, &sdk_dir, &sigs_dir, &logs_dir] {
+    for d in [&session_dir, &logs_dir] {
         fs::create_dir_all(d).with_context(|| format!("failed to create {}", d.display()))?;
     }
+    // xsip-style: SDK and Interfaces are at the root of the output directory.
+    let sdk_dir = session_dir.clone();
+    let sigs_dir = session_dir.clone();
 
     init_logging(&logs_dir, args.verbose)?;
 
@@ -223,15 +224,15 @@ fn main() -> Result<()> {
 
                 // Multi-language fan-out (C++ only — Rust output dropped).
                 fs::write(
-                    sigs_dir.join("signatures.hpp"),
+                    session_dir.join("Signatures.hpp"),
                     signatures::writers::render_hpp(&report.hits),
                 )?;
                 fs::write(
-                    sigs_dir.join("SIGNATURES.md"),
+                    session_dir.join("SIGNATURES.md"),
                     signatures::writers::render_markdown(&report.hits),
                 )?;
                 fs::write(
-                    sigs_dir.join("ida_tutorials.json"),
+                    logs_dir.join("ida_tutorials.json"),
                     signatures::tutorials::render_json(signatures::database::CS2_SIGNATURES),
                 )?;
 

@@ -63,8 +63,16 @@ pub fn analyze_all<P: Process + MemoryView>(
     sig_hits: &BTreeMap<String, umem>,
 ) -> Result<AnalysisResult> {
     ui::progress(10, 100, "dumping buttons");
-    let buttons = analyze(process, buttons);
-    info!("found {} buttons", buttons.len());
+    let buttons = match buttons(process, sig_hits) {
+        Ok(b) => {
+            info!("found {} buttons", b.len());
+            b
+        }
+        Err(e) => {
+            log::error!("button walk failed: {}", e);
+            Default::default()
+        }
+    };
 
     ui::progress(20, 100, "dumping convars");
     let convars = match convars(process, show_convar_values, sig_hits) {
