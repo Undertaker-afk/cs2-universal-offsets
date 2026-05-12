@@ -14,10 +14,22 @@ fn main() -> std::io::Result<()> {
         .unwrap_or_else(|| PathBuf::from("output/sdk"));
     fs::create_dir_all(&out_dir)?;
 
-    fs::write(out_dir.join("verified_features.json"), verified::render_json(None))?;
-    fs::write(out_dir.join("verified_features.md"), verified::render_md(None))?;
-    fs::write(out_dir.join("verified_features.hpp"), verified::render_hpp(None))?;
+    fs::write(
+        out_dir.join("verified_features.json"),
+        verified::render_json(None),
+    )?;
+    fs::write(
+        out_dir.join("verified_features.md"),
+        verified::render_md(None),
+    )?;
+    fs::write(
+        out_dir.join("verified_features.hpp"),
+        verified::render_hpp(None),
+    )?;
 
-    println!("emitted verified_features.{{json,md,hpp}} -> {}", out_dir.display());
+    println!(
+        "emitted verified_features.{{json,md,hpp}} -> {}",
+        out_dir.display()
+    );
     Ok(())
 }

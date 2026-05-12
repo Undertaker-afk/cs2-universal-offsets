@@ -16,7 +16,11 @@ pub fn slugify(input: &str) -> String {
             s.push('_');
         }
     }
-    if s.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+    if s.chars()
+        .next()
+        .map(|c| c.is_ascii_digit())
+        .unwrap_or(false)
+    {
         s.insert(0, '_');
     }
     s
@@ -40,7 +44,11 @@ pub fn type_ident(input: &str) -> String {
     if s.is_empty() {
         return "anonymous".to_string();
     }
-    if s.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+    if s.chars()
+        .next()
+        .map(|c| c.is_ascii_digit())
+        .unwrap_or(false)
+    {
         s.insert(0, '_');
     }
     s

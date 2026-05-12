@@ -1,7 +1,7 @@
+use crate::analysis::SchemaMap;
+use anyhow::Result;
 use std::fs;
 use std::path::Path;
-use anyhow::Result;
-use crate::analysis::SchemaMap;
 
 pub fn generate(out_dir: &Path, schemas: &SchemaMap) -> Result<()> {
     // Generate .dot file
@@ -30,7 +30,11 @@ pub fn generate(out_dir: &Path, schemas: &SchemaMap) -> Result<()> {
     for (module, (classes, _)) in schemas {
         html.push_str(&format!("<li><b>{}</b><ul>", module));
         for class in classes {
-            let parent_info = class.parent_name.as_ref().map(|p| format!(" (parent: {})", p)).unwrap_or_default();
+            let parent_info = class
+                .parent_name
+                .as_ref()
+                .map(|p| format!(" (parent: {})", p))
+                .unwrap_or_default();
             html.push_str(&format!("<li>{}{}</li>", class.name, parent_info));
         }
         html.push_str("</ul></li>");

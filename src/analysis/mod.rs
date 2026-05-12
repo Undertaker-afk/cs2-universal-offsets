@@ -15,13 +15,13 @@ use log::{error, info};
 use memflow::prelude::v1::*;
 
 mod buttons;
-mod interfaces;
-mod offsets;
-mod rtti;
-mod schemas;
 mod convars;
 mod game_events;
+mod interfaces;
+mod offsets;
 mod resources;
+mod rtti;
+mod schemas;
 mod skinchanger;
 mod vtables;
 
@@ -106,14 +106,20 @@ pub fn analyze_all<P: Process + MemoryView>(
     let interfaces = analyze(process, interfaces);
     info!(
         "found {} interfaces across {} modules",
-        interfaces.iter().map(|(_, ifaces)| ifaces.len()).sum::<usize>(),
+        interfaces
+            .iter()
+            .map(|(_, ifaces)| ifaces.len())
+            .sum::<usize>(),
         interfaces.len(),
     );
 
     let offsets = analyze(process, offsets);
     info!(
         "found {} offsets across {} modules",
-        offsets.iter().map(|(_, offsets)| offsets.len()).sum::<usize>(),
+        offsets
+            .iter()
+            .map(|(_, offsets)| offsets.len())
+            .sum::<usize>(),
         offsets.len(),
     );
 
@@ -141,7 +147,11 @@ pub fn analyze_all<P: Process + MemoryView>(
     let vtables = match vtables::vtables(process, &interfaces) {
         Ok(v) => {
             let total: usize = v.values().map(|m| m.len()).sum();
-            let methods: usize = v.values().flat_map(|m| m.values()).map(|i| i.methods.len()).sum();
+            let methods: usize = v
+                .values()
+                .flat_map(|m| m.values())
+                .map(|i| i.methods.len())
+                .sum();
             let rtti: usize = v
                 .values()
                 .flat_map(|m| m.values())
@@ -149,7 +159,10 @@ pub fn analyze_all<P: Process + MemoryView>(
                 .count();
             info!(
                 "dumped {} interface vtables ({} method slots, {} class names recovered via RTTI) across {} modules",
-                total, methods, rtti, v.len()
+                total,
+                methods,
+                rtti,
+                v.len()
             );
             v
         }

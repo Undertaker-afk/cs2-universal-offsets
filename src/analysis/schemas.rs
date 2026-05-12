@@ -39,6 +39,7 @@ pub struct ClassField {
     pub type_name: String,
     pub offset: i32,
     pub size: i32,
+    pub category: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -147,11 +148,24 @@ fn read_class_binding_fields(
 
         let size = get_type_size(mem, type_ptr).unwrap_or(0);
 
+        let category = match r#type.type_category {
+            SchemaTypeCategory::BuiltIn => "Schema_Builtin",
+            SchemaTypeCategory::Ptr => "Schema_Ptr",
+            SchemaTypeCategory::Bitfield => "Schema_Bitfield",
+            SchemaTypeCategory::FixedArray => "Schema_FixedArray",
+            SchemaTypeCategory::Atomic => "Schema_Atomic",
+            SchemaTypeCategory::DeclaredClass => "Schema_DeclaredClass",
+            SchemaTypeCategory::DeclaredEnum => "Schema_DeclaredEnum",
+            _ => "Schema_None",
+        }
+        .to_string();
+
         acc.push(ClassField {
             name,
             type_name,
             offset: field.offset,
             size,
+            category,
         });
 
         Ok(acc)
@@ -162,7 +176,9 @@ fn get_type_size(mem: &mut impl MemoryView, type_ptr: Pointer64<SchemaType>) -> 
     let r#type = mem.read_ptr(type_ptr).data_part()?;
     match r#type.type_category {
         SchemaTypeCategory::BuiltIn => {
-            let name = mem.read_utf8_lossy(r#type.name.address(), 128).data_part()?;
+            let name = mem
+                .read_utf8_lossy(r#type.name.address(), 128)
+                .data_part()?;
             Ok(match name.as_str() {
                 "int8" | "uint8" | "bool" | "char" => 1,
                 "int16" | "uint16" => 2,
@@ -182,7 +198,9 @@ fn get_type_size(mem: &mut impl MemoryView, type_ptr: Pointer64<SchemaType>) -> 
             SchemaAtomicCategory::TF => unsafe { Ok(r#type.value.atomic_tf.size) },
             SchemaAtomicCategory::TTF => unsafe { Ok(r#type.value.atomic_ttf.size) },
             _ => {
-                let name = mem.read_utf8_lossy(r#type.name.address(), 128).data_part()?;
+                let name = mem
+                    .read_utf8_lossy(r#type.name.address(), 128)
+                    .data_part()?;
                 Ok(match name.split('<').next().unwrap() {
                     "CHandle" => 4,
                     "CUtlVector" | "CNetworkUtlVectorBase" | "CUtlVectorEmbeddedNetworkVar" => 24,

@@ -39,7 +39,11 @@ fn ident(name: &str) -> String {
             s.push('_');
         }
     }
-    if s.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+    if s.chars()
+        .next()
+        .map(|c| c.is_ascii_digit())
+        .unwrap_or(false)
+    {
         s.insert(0, '_');
     }
     s
@@ -64,7 +68,13 @@ fn display_name(raw: &str) -> String {
         let head = parts[0];
         let tail = parts[parts.len() - 1];
         let bad_tail = matches!(tail, "fn" | "ptr" | "call" | "func" | "function");
-        if (head.starts_with('C') || head.starts_with("CCS") || head.starts_with("CS") || head.starts_with("CBase") || head.starts_with("C_")) && !bad_tail {
+        if (head.starts_with('C')
+            || head.starts_with("CCS")
+            || head.starts_with("CS")
+            || head.starts_with("CBase")
+            || head.starts_with("C_"))
+            && !bad_tail
+        {
             return tail.to_string();
         }
     }
@@ -80,7 +90,8 @@ fn display_name(raw: &str) -> String {
 /// class names into consumer builds.
 fn proto_to_fnptr(sig_name: &str, _proto: &str) -> String {
     if sig_name == "CreateMove" {
-        return "bool(__fastcall*)(void* pthis, int nSlot, float flInputSampleTime, bool bActive)".to_string();
+        return "bool(__fastcall*)(void* pthis, int nSlot, float flInputSampleTime, bool bActive)"
+            .to_string();
     }
     "void(__fastcall*)(void*, ...)".to_string()
 }
@@ -180,7 +191,9 @@ pub fn render_hpp(hits: &[SignatureHit]) -> String {
     for (module, items) in grouped(hits) {
         s.push_str(&format!("    namespace {} {{\n", module_ident(&module)));
         for h in &items {
-            let Some(pattern) = emit_pattern(h) else { continue };
+            let Some(pattern) = emit_pattern(h) else {
+                continue;
+            };
             s.push_str(&format!(
                 "        inline constexpr std::string_view {} = \"{}\";\n",
                 ident(&h.name),
@@ -199,8 +212,12 @@ pub fn render_hpp(hits: &[SignatureHit]) -> String {
     for (module, items) in grouped(hits) {
         s.push_str(&format!("    namespace {} {{\n", module_ident(&module)));
         for h in &items {
-            if emit_pattern(h).is_none() { continue; }
-            if is_type_name(&h.name) { continue; }
+            if emit_pattern(h).is_none() {
+                continue;
+            }
+            if is_type_name(&h.name) {
+                continue;
+            }
             // Always a placeholder fn-ptr until prototypes are audited.
             if let Some(proto) = h.prototype.as_deref().filter(|p| !p.is_empty()) {
                 s.push_str(&format!(
@@ -232,12 +249,11 @@ pub fn render_rs(hits: &[SignatureHit]) -> String {
     for (module, items) in grouped(hits) {
         s.push_str(&format!("pub mod {} {{\n", module_ident(module)));
         for h in items {
-            let Some(pattern) = emit_pattern(h) else { continue };
+            let Some(pattern) = emit_pattern(h) else {
+                continue;
+            };
             if let Some(proto) = h.prototype.as_deref() {
-                s.push_str(&format!(
-                    "    /// `{}`\n",
-                    proto.replace('\n', " "),
-                ));
+                s.push_str(&format!("    /// `{}`\n", proto.replace('\n', " "),));
             }
             s.push_str(&format!(
                 "    pub const {}: &str = \"{}\";\n",

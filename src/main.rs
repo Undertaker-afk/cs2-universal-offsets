@@ -36,7 +36,6 @@ use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-
 use anyhow::{Context, Result};
 use chrono::Local;
 use clap::{ArgAction, Parser};
@@ -56,7 +55,11 @@ mod source2;
 mod ui;
 
 #[derive(Debug, Parser)]
-#[command(author, version, about = "CS2 Universal Dumper — offsets + signatures in one run")]
+#[command(
+    author,
+    version,
+    about = "CS2 Universal Dumper — offsets + signatures in one run"
+)]
 struct Args {
     #[arg(short, long)]
     connector: Option<String>,
@@ -127,8 +130,7 @@ fn main() -> Result<()> {
     let sigs_dir = session_dir.join("signatures");
     let logs_dir = session_dir.join("logs");
     for d in [&session_dir, &sdk_dir, &sigs_dir, &logs_dir] {
-        fs::create_dir_all(d)
-            .with_context(|| format!("failed to create {}", d.display()))?;
+        fs::create_dir_all(d).with_context(|| format!("failed to create {}", d.display()))?;
     }
 
     init_logging(&logs_dir, args.verbose)?;
@@ -138,8 +140,22 @@ fn main() -> Result<()> {
     ui::kv("Output", &session_dir.display().to_string());
     ui::kv("Process", &args.process_name);
     ui::kv("File types", &args.file_types.join(","));
-    ui::kv("Offsets", if args.skip_offsets { "skipped" } else { "enabled" });
-    ui::kv("Signatures", if args.skip_signatures { "skipped" } else { "enabled" });
+    ui::kv(
+        "Offsets",
+        if args.skip_offsets {
+            "skipped"
+        } else {
+            "enabled"
+        },
+    );
+    ui::kv(
+        "Signatures",
+        if args.skip_signatures {
+            "skipped"
+        } else {
+            "enabled"
+        },
+    );
 
     ui::section("Attach");
     let mut os = build_os(&args)?;
@@ -164,7 +180,11 @@ fn main() -> Result<()> {
             Some(p) => match SignatureCache::load(p) {
                 Ok(c) => {
                     if !c.is_empty() {
-                        ui::info(&format!("warm cache from {} ({} entries)", p.display(), c.len()));
+                        ui::info(&format!(
+                            "warm cache from {} ({} entries)",
+                            p.display(),
+                            c.len()
+                        ));
                     }
                     c
                 }
@@ -202,8 +222,14 @@ fn main() -> Result<()> {
                 ui::ok(&format!("wrote {}", json_path.display()));
 
                 // Multi-language fan-out (C++ only — Rust output dropped).
-                fs::write(sigs_dir.join("signatures.hpp"), signatures::writers::render_hpp(&report.hits))?;
-                fs::write(sigs_dir.join("SIGNATURES.md"), signatures::writers::render_markdown(&report.hits))?;
+                fs::write(
+                    sigs_dir.join("signatures.hpp"),
+                    signatures::writers::render_hpp(&report.hits),
+                )?;
+                fs::write(
+                    sigs_dir.join("SIGNATURES.md"),
+                    signatures::writers::render_markdown(&report.hits),
+                )?;
                 fs::write(
                     sigs_dir.join("ida_tutorials.json"),
                     signatures::tutorials::render_json(signatures::database::CS2_SIGNATURES),
@@ -239,7 +265,11 @@ fn main() -> Result<()> {
             Ok(result) => {
                 ui::ok(&format!(
                     "interfaces: {} across {} modules",
-                    result.interfaces.iter().map(|(_, v)| v.len()).sum::<usize>(),
+                    result
+                        .interfaces
+                        .iter()
+                        .map(|(_, v)| v.len())
+                        .sum::<usize>(),
                     result.interfaces.len()
                 ));
                 ui::ok(&format!(
@@ -247,30 +277,25 @@ fn main() -> Result<()> {
                     result.offsets.iter().map(|(_, v)| v.len()).sum::<usize>(),
                     result.offsets.len()
                 ));
-                let (cc, ec) = result.schemas.values().fold((0, 0), |(c, e), (cv, ev)| {
-                    (c + cv.len(), e + ev.len())
-                });
+                let (cc, ec) = result
+                    .schemas
+                    .values()
+                    .fold((0, 0), |(c, e), (cv, ev)| (c + cv.len(), e + ev.len()));
                 ui::ok(&format!(
                     "schemas: {} classes, {} enums across {} modules",
-                    cc, ec, result.schemas.len()
+                    cc,
+                    ec,
+                    result.schemas.len()
                 ));
 
-                let out = Output::new(
-                    &args.file_types,
-                    args.indent_size,
-                    &sdk_dir,
-                    &result,
-                )?;
+                let out = Output::new(&args.file_types, args.indent_size, &sdk_dir, &result)?;
                 out.dump_all(&mut process)?;
 
-                build_number = result
-                    .offsets
-                    .iter()
-                    .find_map(|(mname, offs)| {
-                        let m = process.module_by_name(mname).ok()?;
-                        let o = offs.iter().find(|(n, _)| *n == "dwBuildNumber")?.1;
-                        process.read::<u32>(m.base + o).data_part().ok()
-                    });
+                build_number = result.offsets.iter().find_map(|(mname, offs)| {
+                    let m = process.module_by_name(mname).ok()?;
+                    let o = offs.iter().find(|(n, _)| *n == "dwBuildNumber")?.1;
+                    process.read::<u32>(m.base + o).data_part().ok()
+                });
 
                 // Emit the cheat-developer-friendly SDK extras (typed schema
                 // classes, netvars split-out, interface accessor stubs,
@@ -352,11 +377,7 @@ fn main() -> Result<()> {
         if let Some(result) = analysis_result.as_ref()
             && !result.buttons.is_empty()
         {
-            if let Err(e) = output::write_buttons(
-                &sdk_dir,
-                &result.buttons,
-                &args.file_types,
-            ) {
+            if let Err(e) = output::write_buttons(&sdk_dir, &result.buttons, &args.file_types) {
                 ui::warn(&format!("buttons emit failed: {}", e));
             } else {
                 ui::ok(&format!(
@@ -378,9 +399,9 @@ fn main() -> Result<()> {
                 .map(|r| output::vtables::name_oracle_from_signatures(&r.hits))
                 .unwrap_or_default();
             let json = output::vtables::render_json(&result.vtables, &oracle);
-            let hpp  = output::vtables::render_hpp(&result.vtables, &oracle, build_number);
+            let hpp = output::vtables::render_hpp(&result.vtables, &oracle, build_number);
             let _ = fs::write(sdk_dir.join("vtables.json"), json);
-            let _ = fs::write(sdk_dir.join("vtables.hpp"),  hpp);
+            let _ = fs::write(sdk_dir.join("vtables.hpp"), hpp);
             let labelled = result
                 .vtables
                 .values()
@@ -432,17 +453,14 @@ fn main() -> Result<()> {
 
     // --- stage 4: Final Reports -------------------------------------------
     if let Some(result) = analysis_result.as_ref() {
-        if let Err(e) = output::reports::generate_reports(
-            &session_dir,
-            result,
-            &sig_report,
-            args.html_report,
-        ) {
+        if let Err(e) =
+            output::reports::generate_reports(&session_dir, result, &sig_report, args.html_report)
+        {
             ui::warn(&format!("final reports generator failed: {}", e));
         }
 
         if let Err(e) = output::llm::generate(&session_dir, result) {
-             ui::warn(&format!("llm.txt generator failed: {}", e));
+            ui::warn(&format!("llm.txt generator failed: {}", e));
         }
     }
 
@@ -497,7 +515,10 @@ fn build_os(args: &Args) -> Result<OsInstanceArcBox<'static>> {
         None => {
             #[cfg(windows)]
             {
-                Ok(memflow_native::create_os(&OsArgs::default(), LibArc::default())?)
+                Ok(memflow_native::create_os(
+                    &OsArgs::default(),
+                    LibArc::default(),
+                )?)
             }
             #[cfg(not(windows))]
             {
@@ -581,8 +602,7 @@ fn collect_module_fingerprints<P: Process + MemoryView>(
         if hdr.len() < 0x40 {
             continue;
         }
-        let e_lfanew =
-            u32::from_le_bytes(hdr[0x3C..0x40].try_into().unwrap()) as usize;
+        let e_lfanew = u32::from_le_bytes(hdr[0x3C..0x40].try_into().unwrap()) as usize;
         // PE\0\0 at e_lfanew, then COFF FileHeader (20 bytes):
         //   Machine(2) NumberOfSections(2) TimeDateStamp(4) ...
         if e_lfanew + 24 > hdr.len() {
@@ -592,8 +612,7 @@ fn collect_module_fingerprints<P: Process + MemoryView>(
             continue;
         }
         let coff = e_lfanew + 4;
-        let timestamp =
-            u32::from_le_bytes(hdr[coff + 4..coff + 8].try_into().unwrap());
+        let timestamp = u32::from_le_bytes(hdr[coff + 4..coff + 8].try_into().unwrap());
 
         // OptionalHeader.SizeOfImage lives at COFF + 20 + 56 (PE32+).
         let opt = coff + 20;
@@ -619,8 +638,7 @@ fn collect_module_fingerprints<P: Process + MemoryView>(
 /// Pretty-print only successfully-resolved signatures, one hit per line.
 /// Unfound entries are dropped entirely � they have no usable address.
 fn format_found_signatures(report: &signatures::SignatureReport) -> String {
-    let found: Vec<&signatures::SignatureHit> =
-        report.hits.iter().filter(|h| h.found).collect();
+    let found: Vec<&signatures::SignatureHit> = report.hits.iter().filter(|h| h.found).collect();
 
     let name_w = found.iter().map(|h| h.name.len()).max().unwrap_or(0);
     let mod_w = found.iter().map(|h| h.module.len()).max().unwrap_or(0);
@@ -646,7 +664,10 @@ fn format_found_signatures(report: &signatures::SignatureReport) -> String {
     s.push_str("{\n");
     s.push_str(&format!("  \"total_scanned\":  {},\n", report.total));
     s.push_str(&format!("  \"found\":          {},\n", report.found));
-    s.push_str(&format!("  \"missing\":        {},\n", report.total - report.found));
+    s.push_str(&format!(
+        "  \"missing\":        {},\n",
+        report.total - report.found
+    ));
 
     s.push_str(&format!(
         "  \"modules\":        [{}],\n",
@@ -660,8 +681,13 @@ fn format_found_signatures(report: &signatures::SignatureReport) -> String {
     s.push_str("  \"signatures\": [\n");
     for (i, h) in found.iter().enumerate() {
         let comma = if i + 1 == found.len() { "" } else { "," };
-        let va = h.va.map(|v| format!("0x{:X}", v)).unwrap_or_else(|| "null".into());
-        let rva = h.rva.map(|v| format!("0x{:X}", v)).unwrap_or_else(|| "null".into());
+        let va =
+            h.va.map(|v| format!("0x{:X}", v))
+                .unwrap_or_else(|| "null".into());
+        let rva = h
+            .rva
+            .map(|v| format!("0x{:X}", v))
+            .unwrap_or_else(|| "null".into());
         let bytes_field = h
             .bytes
             .as_deref()

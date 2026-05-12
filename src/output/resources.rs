@@ -1,8 +1,7 @@
-use std::collections::BTreeMap;
+use crate::analysis::ResourceTree;
+use anyhow::Result;
 use std::fs;
 use std::path::Path;
-use anyhow::Result;
-use crate::analysis::ResourceTree;
 
 pub fn dump(out_dir: &Path, tree: &ResourceTree) -> Result<()> {
     let mut s = String::new();

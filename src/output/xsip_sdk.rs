@@ -3,16 +3,13 @@ use std::fmt::Write;
 use std::fs;
 use std::path::Path;
 
-use anyhow::Result;
-use crate::analysis::{Class, Enum, SchemaMap};
 use super::ident::slugify;
+use crate::analysis::{Class, Enum, SchemaMap};
+use anyhow::Result;
 
 use crate::ui;
 
-pub fn dump(
-    out_dir: &Path,
-    schemas: &SchemaMap,
-) -> Result<()> {
+pub fn dump(out_dir: &Path, schemas: &SchemaMap) -> Result<()> {
     let xsip_sdk_dir = out_dir.join("xsip_sdk");
     fs::create_dir_all(&xsip_sdk_dir)?;
 
@@ -22,7 +19,11 @@ pub fn dump(
 
     let total_modules = schemas.len();
     for (i, (module_name, (classes, enums))) in schemas.iter().enumerate() {
-        ui::progress(i, total_modules, &format!("dumping xsip-sdk: {}", module_name));
+        ui::progress(
+            i,
+            total_modules,
+            &format!("dumping xsip-sdk: {}", module_name),
+        );
         let module_slug = slugify(module_name.trim_end_matches(".dll"));
         let module_dir = xsip_sdk_dir.join(&module_slug);
         fs::create_dir_all(&module_dir)?;
@@ -68,6 +69,11 @@ namespace GlobalTypes {
     };
 
     template <typename T>
+    struct CStrongHandle {
+        uint64_t m_Value;
+    };
+
+    template <typename T>
     struct CUtlVector {
         T* m_pElements;
         int m_Size;
@@ -77,6 +83,13 @@ namespace GlobalTypes {
     struct CSplitScreenSlot {
         int m_nSlot;
     };
+
+    struct Vector { float x, y, z; };
+    struct Vector2D { float x, y; };
+    struct Vector4D { float x, y, z, w; };
+    struct QAngle { float x, y, z; };
+    struct Quaternion { float x, y, z, w; };
+    struct Color { uint8_t r, g, b, a; };
 }
 
 #define S2_PAD(size) char pad_##__LINE__[size]
@@ -115,16 +128,6 @@ fn write_class_header(
         }
     }
 
-    // Heuristic for field types that need includes
-    for field in &class.fields {
-        let clean_type = field.type_name.split('<').next().unwrap().split('[').next().unwrap();
-        if let Some(module) = type_to_module.get(clean_type) {
-            if module == module_slug && clean_type != &class.name {
-                includes.insert(format!("{}.hpp", clean_type));
-            }
-        }
-    }
-
     for inc in includes {
         writeln!(s, "#include \"{}\"", inc)?;
     }
@@ -133,14 +136,19 @@ fn write_class_header(
     // Forward declarations
     let mut forward_decls = BTreeMap::new();
     for field in &class.fields {
-        let clean_type = field.type_name.split('<').next().unwrap().split('[').next().unwrap();
+        let clean_type = field
+            .type_name
+            .split('<')
+            .next()
+            .unwrap()
+            .split('[')
+            .next()
+            .unwrap();
         if let Some(module) = type_to_module.get(clean_type) {
-            forward_decls.entry(module.clone()).or_insert_with(BTreeSet::new).insert(clean_type.to_string());
-        }
-    }
-    if let Some(parent) = &class.parent_name {
-        if let Some(module) = type_to_module.get(parent) {
-            forward_decls.entry(module.clone()).or_insert_with(BTreeSet::new).insert(parent.to_string());
+            forward_decls
+                .entry(module.clone())
+                .or_insert_with(BTreeSet::new)
+                .insert(clean_type.to_string());
         }
     }
 
@@ -162,7 +170,10 @@ fn write_class_header(
     writeln!(s, "    namespace {} {{", module_slug)?;
 
     let parent_str = if let Some(parent) = &class.parent_name {
-        let parent_module = type_to_module.get(parent).map(|s| s.as_str()).unwrap_or(module_slug);
+        let parent_module = type_to_module
+            .get(parent)
+            .map(|s| s.as_str())
+            .unwrap_or(module_slug);
         format!(" : public CS2::{}::{}", parent_module, parent)
     } else {
         "".to_string()
@@ -172,51 +183,61 @@ fn write_class_header(
     writeln!(s, "        public:")?;
 
     let mut current_offset = 0;
-    // We assume fields are sorted by offset
     let mut sorted_fields = class.fields.clone();
     sorted_fields.sort_by_key(|f| f.offset);
 
     for field in sorted_fields {
         if field.offset > current_offset {
-            writeln!(s, "            S2_PAD({:#X});", field.offset - current_offset)?;
-        } else if field.offset < current_offset {
-             writeln!(s, "            // WARNING: field {} at {:#X} overlaps with previous field!", field.name, field.offset)?;
+            writeln!(
+                s,
+                "            S2_PAD({:#X});",
+                field.offset - current_offset
+            )?;
         }
 
         let cpp_type = map_type(&field.type_name, module_slug, type_to_module);
-        writeln!(s, "            {} {}; // {:#X} | Size: {:#X}", cpp_type, field.name, field.offset, field.size)?;
+        writeln!(
+            s,
+            "            {} {}; // {:#X} | {} | Size: {:#X}",
+            cpp_type, field.name, field.offset, field.category, field.size
+        )?;
 
         current_offset = field.offset + field.size;
     }
 
     if (class.size as i32) > current_offset {
-        writeln!(s, "            S2_PAD({:#X}); // End padding", class.size - current_offset)?;
+        writeln!(
+            s,
+            "            S2_PAD({:#X}); // End padding",
+            class.size - current_offset
+        )?;
     }
 
     writeln!(s, "        }};")?;
 
     writeln!(s, "#ifdef USE_STATIC_ASSERTS")?;
     for field in &class.fields {
-        writeln!(s, "        static_assert(offsetof(CS2::{}::{}, {}) == {:#X}, \"{} in {} should be at offset {:#X}\");",
-            module_slug, class.name, field.name, field.offset, field.name, class.name, field.offset)?;
+        writeln!(
+            s,
+            "        static_assert(offsetof(CS2::{}::{}, {}) == {:#X}, \"{} in {} should be at offset {:#X}\");",
+            module_slug, class.name, field.name, field.offset, field.name, class.name, field.offset
+        )?;
     }
-    writeln!(s, "        static_assert(sizeof(CS2::{}::{}) == {:#X}, \"{} size should be {:#X}\");",
-        module_slug, class.name, class.size, class.name, class.size)?;
+    writeln!(
+        s,
+        "        static_assert(sizeof(CS2::{}::{}) == {:#X}, \"{} size should be {:#X}\");",
+        module_slug, class.name, class.size, class.name, class.size
+    )?;
     writeln!(s, "#endif")?;
 
     writeln!(s, "    }}")?;
-    writeln!(s)?;
     writeln!(s, "}}")?;
 
     fs::write(module_dir.join(format!("{}.hpp", class.name)), s)?;
     Ok(())
 }
 
-fn write_enum_header(
-    module_dir: &Path,
-    module_slug: &str,
-    enm: &Enum,
-) -> Result<()> {
+fn write_enum_header(module_dir: &Path, module_slug: &str, enm: &Enum) -> Result<()> {
     let mut s = String::new();
     writeln!(s, "// generated - do not edit!")?;
     writeln!(s, "#pragma once")?;
@@ -248,17 +269,22 @@ fn write_enum_header(
 
 fn map_type(raw: &str, current_module: &str, type_to_module: &BTreeMap<String, String>) -> String {
     if raw.starts_with("CHandle<") {
-        let inner = &raw[8..raw.len()-1].trim();
+        let inner = raw[8..raw.len() - 1].trim();
         let mapped_inner = map_type(inner, current_module, type_to_module);
         return format!("GlobalTypes::CHandle<{}>", mapped_inner);
     }
+    if raw.starts_with("CStrongHandle<") {
+        let inner = raw[14..raw.len() - 1].trim();
+        let mapped_inner = map_type(inner, current_module, type_to_module);
+        return format!("GlobalTypes::CStrongHandle<{}>", mapped_inner);
+    }
     if raw.starts_with("CUtlVector<") {
-        let inner = &raw[11..raw.len()-1].trim();
+        let inner = raw[11..raw.len() - 1].trim();
         let mapped_inner = map_type(inner, current_module, type_to_module);
         return format!("GlobalTypes::CUtlVector<{}>", mapped_inner);
     }
 
-    let base_type = match raw {
+    match raw {
         "int32" => "int32_t".into(),
         "uint32" => "uint32_t".into(),
         "int16" => "int16_t".into(),
@@ -270,6 +296,10 @@ fn map_type(raw: &str, current_module: &str, type_to_module: &BTreeMap<String, S
         "float32" => "float".into(),
         "float64" => "double".into(),
         "bool" => "bool".into(),
+        "char" => "char".into(),
+        "Vector" | "Vector2D" | "Vector4D" | "QAngle" | "Quaternion" | "Color" => {
+            format!("GlobalTypes::{}", raw)
+        }
         _ => {
             if let Some(module) = type_to_module.get(raw) {
                 format!("{}::{}", module, raw)
@@ -277,6 +307,5 @@ fn map_type(raw: &str, current_module: &str, type_to_module: &BTreeMap<String, S
                 raw.to_string()
             }
         }
-    };
-    base_type
+    }
 }

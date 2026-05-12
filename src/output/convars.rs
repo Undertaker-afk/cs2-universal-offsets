@@ -1,6 +1,5 @@
-use std::collections::BTreeMap;
-use std::fmt::Write;
 use crate::analysis::ConVarMap;
+use std::fmt::Write;
 
 pub fn render_hpp(convars: &ConVarMap, show_values: bool) -> String {
     let mut s = String::new();
@@ -18,7 +17,12 @@ pub fn render_hpp(convars: &ConVarMap, show_values: bool) -> String {
             "".to_string()
         };
         writeln!(s, "        // {}", cv.description.replace("\n", " ")).ok();
-        writeln!(s, "        constexpr int32_t {}_flags = {:#X};{}", name, cv.flags, comment).ok();
+        writeln!(
+            s,
+            "        constexpr int32_t {}_flags = {:#X};{}",
+            name, cv.flags, comment
+        )
+        .ok();
     }
 
     writeln!(s, "    }}").ok();

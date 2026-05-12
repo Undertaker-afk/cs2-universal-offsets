@@ -15,7 +15,6 @@
 
 use std::collections::BTreeMap;
 
-
 use anyhow::{Context, Result, anyhow};
 use iced_x86::{Decoder, DecoderOptions, Instruction, Mnemonic, Register};
 use memflow::prelude::v1::*;
@@ -26,9 +25,9 @@ use crate::ui;
 pub mod cache;
 pub mod database;
 pub mod diff;
-pub mod writers;
 pub mod offsets_writer;
 pub mod tutorials;
+pub mod writers;
 
 pub use cache::SignatureCache;
 
@@ -118,7 +117,9 @@ pub struct SignatureHit {
     pub error: Option<String>,
 }
 
-fn default_match_count() -> u32 { 1 }
+fn default_match_count() -> u32 {
+    1
+}
 
 #[derive(Default, Debug, serde::Serialize)]
 pub struct SignatureReport {
@@ -144,8 +145,6 @@ pub fn scan_all_with_cache<P>(
 where
     P: Process + MemoryView,
 {
-
-
     // Pre-load each unique module image once so every signature reuses it.
     let mut module_cache: BTreeMap<String, ModuleCache> = BTreeMap::new();
     for sig in sigs {
@@ -472,8 +471,7 @@ fn scan_pattern(mc: &ModuleCache, sig: &Signature) -> SignatureHit {
 
     let synth = synthesize_pattern(mc, res_rva);
     let confidence = calculate_confidence(&bytes, &mask, matches);
-    let proto = opt_proto(sig.name, sig.prototype)
-        .or_else(|| recover_prototype(mc, res_rva));
+    let proto = opt_proto(sig.name, sig.prototype).or_else(|| recover_prototype(mc, res_rva));
 
     SignatureHit {
         name: display_name(sig.name),
@@ -497,8 +495,12 @@ fn scan_pattern(mc: &ModuleCache, sig: &Signature) -> SignatureHit {
 }
 
 fn calculate_confidence(bytes: &[u8], mask: &[bool], matches: u32) -> f32 {
-    if matches == 0 { return 0.0; }
-    if matches > 1 { return 0.1; }
+    if matches == 0 {
+        return 0.0;
+    }
+    if matches > 1 {
+        return 0.1;
+    }
 
     let mut score = 0.4;
 
@@ -738,14 +740,34 @@ pub(crate) fn recover_prototype(mc: &ModuleCache, rva: u64) -> Option<String> {
     for instr in &instructions {
         // Very simple heuristic: if register is read before being written
         // (ignoring complex control flow)
-        if !used_rcx && is_reg_read(instr, Register::RCX) { used_rcx = true; args.push("void* a1"); }
-        if !used_rdx && is_reg_read(instr, Register::RDX) { used_rdx = true; args.push("void* a2"); }
-        if !used_r8 && is_reg_read(instr, Register::R8) { used_r8 = true; args.push("void* a3"); }
-        if !used_r9 && is_reg_read(instr, Register::R9) { used_r9 = true; args.push("void* a4"); }
+        if !used_rcx && is_reg_read(instr, Register::RCX) {
+            used_rcx = true;
+            args.push("void* a1");
+        }
+        if !used_rdx && is_reg_read(instr, Register::RDX) {
+            used_rdx = true;
+            args.push("void* a2");
+        }
+        if !used_r8 && is_reg_read(instr, Register::R8) {
+            used_r8 = true;
+            args.push("void* a3");
+        }
+        if !used_r9 && is_reg_read(instr, Register::R9) {
+            used_r9 = true;
+            args.push("void* a4");
+        }
     }
 
-    let args_str = if args.is_empty() { "".to_string() } else { args.join(", ") };
-    Some(format!("void* __fastcall sub_{:X}({})", mc.base + rva, args_str))
+    let args_str = if args.is_empty() {
+        "".to_string()
+    } else {
+        args.join(", ")
+    };
+    Some(format!(
+        "void* __fastcall sub_{:X}({})",
+        mc.base + rva,
+        args_str
+    ))
 }
 
 fn is_reg_read(instr: &Instruction, reg: Register) -> bool {
@@ -802,7 +824,12 @@ fn display_name(raw: &str) -> String {
     if let Some(idx) = raw.rfind("::") {
         return raw[idx + 2..].to_string();
     }
-    if raw.starts_with("m_") || raw.starts_with("dw") || raw.starts_with("g_") || raw.starts_with("C_") || raw.ends_with("_t") {
+    if raw.starts_with("m_")
+        || raw.starts_with("dw")
+        || raw.starts_with("g_")
+        || raw.starts_with("C_")
+        || raw.ends_with("_t")
+    {
         return raw.to_string();
     }
 
@@ -811,7 +838,11 @@ fn display_name(raw: &str) -> String {
         let head = parts[0];
         let tail = parts[parts.len() - 1];
         let bad_tail = matches!(tail, "fn" | "ptr" | "call" | "func" | "function")
-            || tail.chars().next().map(|c| c.is_ascii_lowercase()).unwrap_or(true);
+            || tail
+                .chars()
+                .next()
+                .map(|c| c.is_ascii_lowercase())
+                .unwrap_or(true);
         let looks_like_class = head
             .chars()
             .next()

@@ -70,7 +70,8 @@ pub fn render_module_headers(
     timestamp: &str,
 ) -> Vec<(String, String)> {
     let mut out = Vec::with_capacity(schemas.len());
-    let mut module_data: Vec<(String, String, Vec<Class>, Vec<Enum>)> = Vec::with_capacity(schemas.len());
+    let mut module_data: Vec<(String, String, Vec<Class>, Vec<Enum>)> =
+        Vec::with_capacity(schemas.len());
     let mut type_namespace_map: BTreeMap<String, String> = BTreeMap::new();
     let canonical_type_namespace_map = get_type_namespace_map();
     // Cross-module dedup: a schema class registered in two modules
@@ -106,7 +107,9 @@ pub fn render_module_headers(
                 // No canonical owner: first occurrence wins
                 if seen_classes.insert(class_name.clone()) {
                     filtered_classes.push(c.clone());
-                    type_namespace_map.entry(class_name.clone()).or_insert_with(|| ns.clone());
+                    type_namespace_map
+                        .entry(class_name.clone())
+                        .or_insert_with(|| ns.clone());
                 }
             }
         }
@@ -119,7 +122,9 @@ pub fn render_module_headers(
             } else {
                 if seen_enums.insert(enum_name.clone()) {
                     filtered_enums.push(e.clone());
-                    type_namespace_map.entry(enum_name.clone()).or_insert_with(|| ns.clone());
+                    type_namespace_map
+                        .entry(enum_name.clone())
+                        .or_insert_with(|| ns.clone());
                 }
             }
 
@@ -127,7 +132,9 @@ pub fn render_module_headers(
             if let Some(&owner) = canonical_type_namespace_map.get(alias_name.as_str()) {
                 type_namespace_map.insert(alias_name, owner.to_string());
             } else {
-                type_namespace_map.entry(alias_name).or_insert_with(|| ns.clone());
+                type_namespace_map
+                    .entry(alias_name)
+                    .or_insert_with(|| ns.clone());
             }
         }
 
@@ -196,16 +203,43 @@ fn render_module_namespace_body(
         writeln!(s, "    }};\n").ok();
     }
 
-    let class_names: BTreeSet<String> = classes.iter().map(|c| sanitize_class_name(&c.name)).collect();
+    let class_names: BTreeSet<String> = classes
+        .iter()
+        .map(|c| sanitize_class_name(&c.name))
+        .collect();
     let mut emitted_enums: BTreeSet<String> = BTreeSet::new();
 
     for e in enums {
         let has_negative = e.members.iter().any(|m| (m.value as i64) < 0);
         let underlying = match e.alignment {
-            1 => if has_negative { "std::int8_t" } else { "std::uint8_t" },
-            2 => if has_negative { "std::int16_t" } else { "std::uint16_t" },
-            4 => if has_negative { "std::int32_t" } else { "std::uint32_t" },
-            8 => if has_negative { "std::int64_t" } else { "std::uint64_t" },
+            1 => {
+                if has_negative {
+                    "std::int8_t"
+                } else {
+                    "std::uint8_t"
+                }
+            }
+            2 => {
+                if has_negative {
+                    "std::int16_t"
+                } else {
+                    "std::uint16_t"
+                }
+            }
+            4 => {
+                if has_negative {
+                    "std::int32_t"
+                } else {
+                    "std::uint32_t"
+                }
+            }
+            8 => {
+                if has_negative {
+                    "std::int64_t"
+                } else {
+                    "std::uint64_t"
+                }
+            }
             _ => continue,
         };
 
@@ -233,7 +267,13 @@ fn render_module_namespace_body(
             if value < 0 {
                 writeln!(s, "        {} = {},", sanitize_enum_member(&m.name), value).ok();
             } else {
-                writeln!(s, "        {} = {:#X},", sanitize_enum_member(&m.name), m.value as u64).ok();
+                writeln!(
+                    s,
+                    "        {} = {:#X},",
+                    sanitize_enum_member(&m.name),
+                    m.value as u64
+                )
+                .ok();
             }
         }
         writeln!(s, "    }};\n").ok();
@@ -304,11 +344,25 @@ fn render_module_namespace_body(
         for (idx, f) in c.fields.iter().enumerate() {
             let cpp_ty = map_schema_type(&f.type_name, &ns, type_namespace_map);
             if f.type_name.starts_with("bitfield:") {
-                writeln!(s, "        // SKIPPED: {} (bitfield type not supported)", f.name).ok();
+                writeln!(
+                    s,
+                    "        // SKIPPED: {} (bitfield type not supported)",
+                    f.name
+                )
+                .ok();
                 continue;
             }
-            let safe_ty = field_aliases.iter().find(|(i, _)| *i == idx).map(|(_, alias)| alias.clone()).unwrap_or(cpp_ty.clone());
-            writeln!(s, "        SCHEMA_FIELD({:<32}, {:<48}, {:#X}) // {}", safe_ty, f.name, f.offset, f.type_name).ok();
+            let safe_ty = field_aliases
+                .iter()
+                .find(|(i, _)| *i == idx)
+                .map(|(_, alias)| alias.clone())
+                .unwrap_or(cpp_ty.clone());
+            writeln!(
+                s,
+                "        SCHEMA_FIELD({:<32}, {:<48}, {:#X}) // {}",
+                safe_ty, f.name, f.offset, f.type_name
+            )
+            .ok();
         }
         writeln!(s, "    }};\n").ok();
     }
@@ -367,8 +421,6 @@ fn module_include_index_map(
                     }
                 }
             }
-
-
         }
         deps.insert(ns.clone(), sdeps);
     }
@@ -386,7 +438,9 @@ fn module_include_index_map(
         let cnt = in_degree.entry(module.clone()).or_insert(0);
         *cnt += sdeps.len();
         for dep in sdeps {
-            adj.entry(dep.clone()).or_insert_with(Vec::new).push(module.clone());
+            adj.entry(dep.clone())
+                .or_insert_with(Vec::new)
+                .push(module.clone());
         }
     }
 
@@ -413,7 +467,8 @@ fn module_include_index_map(
     // If cycles exist, append remaining modules deterministically.
     if order.len() < modules.len() {
         // Remaining modules set
-        let remaining_set: BTreeSet<String> = modules.into_iter().filter(|m| !order.contains(m)).collect();
+        let remaining_set: BTreeSet<String> =
+            modules.into_iter().filter(|m| !order.contains(m)).collect();
 
         // Build subgraph of dependencies restricted to the remaining modules
         let mut sub_deps: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
@@ -440,11 +495,16 @@ fn module_include_index_map(
             let cnt = in_deg.entry(m.clone()).or_insert(0);
             *cnt += sdeps.len();
             for dep in sdeps {
-                adj.entry(dep.clone()).or_insert_with(Vec::new).push(m.clone());
+                adj.entry(dep.clone())
+                    .or_insert_with(Vec::new)
+                    .push(m.clone());
             }
         }
 
-        let mut q: VecDeque<String> = in_deg.iter().filter_map(|(k, v)| if *v == 0 { Some(k.clone()) } else { None }).collect();
+        let mut q: VecDeque<String> = in_deg
+            .iter()
+            .filter_map(|(k, v)| if *v == 0 { Some(k.clone()) } else { None })
+            .collect();
         let mut sub_order: Vec<String> = Vec::new();
         while let Some(m) = q.pop_front() {
             sub_order.push(m.clone());
@@ -462,13 +522,14 @@ fn module_include_index_map(
 
         // Any modules not included by the sub-order are in a cycle. Append
         // them deterministically with a small priority favoring server.
-        let mut remaining_list: Vec<String> = remaining_set.into_iter().filter(|m| !sub_order.contains(m)).collect();
-        let priority = |m: &str| {
-            match m {
-                "server" => 0,
-                "client" => 1,
-                _ => 2,
-            }
+        let mut remaining_list: Vec<String> = remaining_set
+            .into_iter()
+            .filter(|m| !sub_order.contains(m))
+            .collect();
+        let priority = |m: &str| match m {
+            "server" => 0,
+            "client" => 1,
+            _ => 2,
         };
         remaining_list.sort_by_key(|m| (priority(m.as_str()), m.clone()));
 
@@ -554,7 +615,10 @@ fn topological_sort_classes(classes: &[Class]) -> Vec<&Class> {
     if sorted.len() < classes.len() {
         for c in classes {
             let sanitized_name = sanitize_class_name(&c.name);
-            if !sorted.iter().any(|&sc| sanitize_class_name(&sc.name) == sanitized_name) {
+            if !sorted
+                .iter()
+                .any(|&sc| sanitize_class_name(&sc.name) == sanitized_name)
+            {
                 sorted.push(c);
             }
         }
@@ -576,13 +640,19 @@ fn get_type_namespace_map() -> BTreeMap<&'static str, &'static str> {
     map.insert("InfoForResourceTypeCCompositeMaterial", "resourcesystem");
     map.insert("InfoForResourceTypeCNmSkeleton", "resourcesystem");
     map.insert("InfoForResourceTypeIMaterial2", "resourcesystem");
-    map.insert("InfoForResourceTypeIParticleSystemDefinition", "resourcesystem");
+    map.insert(
+        "InfoForResourceTypeIParticleSystemDefinition",
+        "resourcesystem",
+    );
     map.insert("InfoForResourceTypeIParticleSnapshot", "resourcesystem");
     map.insert("InfoForResourceTypeCNmGraphDefinition", "resourcesystem");
     map.insert("InfoForResourceTypeCNmClip", "resourcesystem");
     map.insert("InfoForResourceTypeCEntityLump", "resourcesystem");
     map.insert("InfoForResourceTypeCChoreoSceneResource", "resourcesystem");
-    map.insert("InfoForResourceTypeCPostProcessingResource", "resourcesystem");
+    map.insert(
+        "InfoForResourceTypeCPostProcessingResource",
+        "resourcesystem",
+    );
     map.insert("InfoForResourceTypeCPhysAggregateData", "resourcesystem");
     map.insert("InfoForResourceTypeCAnimationGroup", "resourcesystem");
     map.insert("InfoForResourceTypeCSequenceGroupData", "resourcesystem");
@@ -2023,7 +2093,14 @@ fn render_one_module(
     let ns = slugify(module.trim_end_matches(".dll"));
     let mut s = String::with_capacity(64 * 1024);
 
-    write_banner(&mut s, module, classes.len(), enums.len(), build_number, timestamp);
+    write_banner(
+        &mut s,
+        module,
+        classes.len(),
+        enums.len(),
+        build_number,
+        timestamp,
+    );
     s.push_str("#pragma once\n");
     s.push_str("#include \"cs2sdk_macros.hpp\"\n\n");
 
@@ -2044,8 +2121,6 @@ fn render_one_module(
                 }
             }
         }
-
-
     }
 
     // Emit includes. Parent dependencies are inheritance requirements, so they
@@ -2092,7 +2167,10 @@ fn render_one_module(
     }
 
     // Build a set of class names to detect collisions with enum names
-    let class_names: BTreeSet<String> = classes.iter().map(|c| sanitize_class_name(&c.name)).collect();
+    let class_names: BTreeSet<String> = classes
+        .iter()
+        .map(|c| sanitize_class_name(&c.name))
+        .collect();
 
     // Forward-declare every class up front so order-of-definition / cyclic
     // references are not a problem.
@@ -2114,10 +2192,34 @@ fn render_one_module(
         let has_negative = e.members.iter().any(|m| (m.value as i64) < 0);
 
         let underlying = match e.alignment {
-            1 => if has_negative { "std::int8_t" } else { "std::uint8_t" },
-            2 => if has_negative { "std::int16_t" } else { "std::uint16_t" },
-            4 => if has_negative { "std::int32_t" } else { "std::uint32_t" },
-            8 => if has_negative { "std::int64_t" } else { "std::uint64_t" },
+            1 => {
+                if has_negative {
+                    "std::int8_t"
+                } else {
+                    "std::uint8_t"
+                }
+            }
+            2 => {
+                if has_negative {
+                    "std::int16_t"
+                } else {
+                    "std::uint16_t"
+                }
+            }
+            4 => {
+                if has_negative {
+                    "std::int32_t"
+                } else {
+                    "std::uint32_t"
+                }
+            }
+            8 => {
+                if has_negative {
+                    "std::int64_t"
+                } else {
+                    "std::uint64_t"
+                }
+            }
             _ => continue,
         };
 
@@ -2150,7 +2252,13 @@ fn render_one_module(
             if value < 0 {
                 writeln!(s, "        {} = {},", sanitize_enum_member(&m.name), value).ok();
             } else {
-                writeln!(s, "        {} = {:#X},", sanitize_enum_member(&m.name), m.value as u64).ok();
+                writeln!(
+                    s,
+                    "        {} = {:#X},",
+                    sanitize_enum_member(&m.name),
+                    m.value as u64
+                )
+                .ok();
             }
         }
         writeln!(s, "    }};\n").ok();
@@ -2214,7 +2322,8 @@ fn render_one_module(
                 continue;
             }
 
-            let safe_ty = field_aliases.iter()
+            let safe_ty = field_aliases
+                .iter()
                 .find(|(i, _)| *i == idx)
                 .map(|(_, alias)| alias.clone())
                 .unwrap_or(cpp_ty.clone());
@@ -2261,7 +2370,7 @@ fn write_banner(
     build_number: Option<u32>,
     timestamp: &str,
 ) {
-    let _ = build_number;  // intentionally unused — see manifest.json
+    let _ = build_number; // intentionally unused — see manifest.json
     writeln!(s, "// Generated by cs2-sdk — https://cs2-sdk.com").ok();
     writeln!(s, "//").ok();
     writeln!(s, "// module:        {}", module).ok();
@@ -2270,7 +2379,11 @@ fn write_banner(
     writeln!(s, "// generated_at:  {}", timestamp).ok();
     writeln!(s, "//").ok();
     writeln!(s, "// Use:").ok();
-    writeln!(s, "//   auto* pawn = reinterpret_cast<C_CSPlayerPawn*>(addr);").ok();
+    writeln!(
+        s,
+        "//   auto* pawn = reinterpret_cast<C_CSPlayerPawn*>(addr);"
+    )
+    .ok();
     writeln!(s, "//   pawn->m_iHealth() = 100;").ok();
     writeln!(s).ok();
 }
@@ -2305,37 +2418,37 @@ fn map_schema_type(
     let mapped = match t {
         "bool" => "bool".into(),
         "char" => "char".into(),
-        "int8"  | "int8_t"   => "std::int8_t".into(),
-        "uint8" | "uint8_t"  => "std::uint8_t".into(),
-        "int16" | "int16_t"  => "std::int16_t".into(),
-        "uint16"| "uint16_t" => "std::uint16_t".into(),
-        "int32" | "int32_t"  => "std::int32_t".into(),
-        "uint32"| "uint32_t" => "std::uint32_t".into(),
-        "int64" | "int64_t"  => "std::int64_t".into(),
-        "uint64"| "uint64_t" => "std::uint64_t".into(),
-        "float32" | "float"  => "float".into(),
+        "int8" | "int8_t" => "std::int8_t".into(),
+        "uint8" | "uint8_t" => "std::uint8_t".into(),
+        "int16" | "int16_t" => "std::int16_t".into(),
+        "uint16" | "uint16_t" => "std::uint16_t".into(),
+        "int32" | "int32_t" => "std::int32_t".into(),
+        "uint32" | "uint32_t" => "std::uint32_t".into(),
+        "int64" | "int64_t" => "std::int64_t".into(),
+        "uint64" | "uint64_t" => "std::uint64_t".into(),
+        "float32" | "float" => "float".into(),
         "float64" | "double" => "double".into(),
-        "Vector"             => "::Vector".into(),
-        "Vector2D"           => "::Vector2D".into(),
-        "Vector4D"           => "::Vector4D".into(),
-        "QAngle"             => "::QAngle".into(),
-        "Quaternion"         => "::Quaternion".into(),
-        "Color"              => "::Color".into(),
-        "CUtlString"         => "::CUtlString".into(),
-        "CUtlSymbolLarge"    => "::CUtlSymbolLarge".into(),
-        "CUtlBinaryBlock"    => "::CUtlBinaryBlock".into(),
-        "matrix3x4_t"        => "::matrix3x4_t".into(),
-        "AABB_t"             => "::AABB_t".into(),
+        "Vector" => "::Vector".into(),
+        "Vector2D" => "::Vector2D".into(),
+        "Vector4D" => "::Vector4D".into(),
+        "QAngle" => "::QAngle".into(),
+        "Quaternion" => "::Quaternion".into(),
+        "Color" => "::Color".into(),
+        "CUtlString" => "::CUtlString".into(),
+        "CUtlSymbolLarge" => "::CUtlSymbolLarge".into(),
+        "CUtlBinaryBlock" => "::CUtlBinaryBlock".into(),
+        "matrix3x4_t" => "::matrix3x4_t".into(),
+        "AABB_t" => "::AABB_t".into(),
         "CRenderBufferBinding" => "::CRenderBufferBinding".into(),
         // Time types
-        "GameTime_t"         => "::GameTime_t".into(),
-        "GameTick_t"         => "::GameTick_t".into(),
+        "GameTime_t" => "::GameTime_t".into(),
+        "GameTick_t" => "::GameTick_t".into(),
         // Symbol/ID types
-        "PulseSymbol_t"      => "::PulseSymbol_t".into(),
-        "PulseDocNodeID_t"   => "::PulseDocNodeID_t".into(),
+        "PulseSymbol_t" => "::PulseSymbol_t".into(),
+        "PulseDocNodeID_t" => "::PulseDocNodeID_t".into(),
         "PulseRuntimeChunkIndex_t" => "::PulseRuntimeChunkIndex_t".into(),
         "PulseRegisterMap_t" => "::PulseRegisterMap_t".into(),
-        "WorldGroupId_t"     => "::WorldGroupId_t".into(),
+        "WorldGroupId_t" => "::WorldGroupId_t".into(),
         "ChangeAccessorFieldPathIndex_t" => "::ChangeAccessorFieldPathIndex_t".into(),
         _ => {
             // Templated containers are extremely common in the schema:
@@ -2352,10 +2465,8 @@ fn map_schema_type(
             while i < chars.len() {
                 if i + 1 < chars.len() && chars[i] == ':' && chars[i + 1] == ':' {
                     // Found ::, check if it's std::
-                    let is_std = i >= 3 &&
-                                 chars[i-3] == 's' &&
-                                 chars[i-2] == 't' &&
-                                 chars[i-1] == 'd';
+                    let is_std =
+                        i >= 3 && chars[i - 3] == 's' && chars[i - 2] == 't' && chars[i - 1] == 'd';
 
                     if is_std {
                         // Keep std::
@@ -2429,7 +2540,11 @@ fn sanitize_enum_member(raw: &str) -> String {
             s.push('_');
         }
     }
-    if s.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+    if s.chars()
+        .next()
+        .map(|c| c.is_ascii_digit())
+        .unwrap_or(false)
+    {
         s.insert(0, '_');
     }
     s
@@ -2440,8 +2555,6 @@ fn sanitize_enum_member(raw: &str) -> String {
 fn sanitize_class_name(raw: &str) -> String {
     raw.replace("::", "_")
 }
-
-
 
 /// Optional helper: collect every (class, parent) pair so a TUI / docs
 /// page can render the class hierarchy. Currently unused by the emitter

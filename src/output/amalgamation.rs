@@ -42,7 +42,9 @@ pub fn render_hpp(sdk_modules: &[String], build_number: Option<u32>) -> String {
     s.push_str("// and pattern strings for every resolved signature.\n\n");
     s.push_str("#pragma once\n\n");
     if let Some(bn) = build_number {
-        s.push_str(&format!("inline constexpr unsigned int CS2_BUILD = {bn};\n\n"));
+        s.push_str(&format!(
+            "inline constexpr unsigned int CS2_BUILD = {bn};\n\n"
+        ));
     }
     s.push_str("// SDK macros (SCHEMA_FIELD, field_ref<T>, ...)\n");
     s.push_str("#include \"cs2sdk_macros.hpp\"\n\n");
@@ -54,7 +56,8 @@ pub fn render_hpp(sdk_modules: &[String], build_number: Option<u32>) -> String {
     let order_path_candidates = ["include/sdk/module_order.txt", "module_order.txt"];
     for p in &order_path_candidates {
         if let Ok(txt) = std::fs::read_to_string(p) {
-            let mut order_map: std::collections::BTreeMap<usize, String> = std::collections::BTreeMap::new();
+            let mut order_map: std::collections::BTreeMap<usize, String> =
+                std::collections::BTreeMap::new();
             for line in txt.lines() {
                 if let Some((idxs, name)) = line.split_once(':') {
                     if let Ok(idx) = idxs.parse::<usize>() {
@@ -64,7 +67,8 @@ pub fn render_hpp(sdk_modules: &[String], build_number: Option<u32>) -> String {
             }
             if !order_map.is_empty() {
                 // Build mapping from module stem -> index for sorting
-                let mut idx_map: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+                let mut idx_map: std::collections::BTreeMap<String, usize> =
+                    std::collections::BTreeMap::new();
                 for (i, name) in order_map.into_iter() {
                     // strip any .dll suffixes and _dll variants
                     let stem = name.trim().trim_end_matches(".dll").to_string();
@@ -78,7 +82,9 @@ pub fn render_hpp(sdk_modules: &[String], build_number: Option<u32>) -> String {
 
     // Ensure client comes before server in the amalgamation to avoid
     // base-class undefined errors for client-owned bases used by server.
-    if ordered_modules.contains(&"server_dll".to_string()) && ordered_modules.contains(&"client_dll".to_string()) {
+    if ordered_modules.contains(&"server_dll".to_string())
+        && ordered_modules.contains(&"client_dll".to_string())
+    {
         ordered_modules.retain(|m| m != "client_dll");
         // place client_dll just before server_dll
         if let Some(pos) = ordered_modules.iter().position(|m| m == "server_dll") {

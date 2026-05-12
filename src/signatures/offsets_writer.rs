@@ -44,7 +44,9 @@ pub fn render_offsets_hpp(hits: &[SignatureHit], analysis: &OffsetMap) -> String
     s.push_str("// Resolved global addresses from the signature + offset passes.\n");
     s.push_str("//\n");
     s.push_str("// Two namespace trees are emitted:\n");
-    s.push_str("//   cs2::offsets::<module>          — signature-resolved interface/global pointers\n");
+    s.push_str(
+        "//   cs2::offsets::<module>          — signature-resolved interface/global pointers\n",
+    );
     s.push_str("//   cs2_dumper::offsets::<module>_dll — a2x/cs2-dumper drop-in (dwXxx names)\n");
     s.push_str("#pragma once\n\n");
     s.push_str("#include <cstddef>\n");
@@ -136,7 +138,10 @@ pub fn render_offsets_rs(analysis: &OffsetMap) -> String {
         s.push_str(&format!("        // Module: {}\n", module));
         s.push_str(&format!("        pub mod {} {{\n", ns_a2x(module)));
         for (name, rva) in entries {
-            s.push_str(&format!("            pub const {}: usize = 0x{:X};\n", name, rva));
+            s.push_str(&format!(
+                "            pub const {}: usize = 0x{:X};\n",
+                name, rva
+            ));
         }
         s.push_str("        }\n");
     }

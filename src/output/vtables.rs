@@ -27,13 +27,12 @@ pub type NameOracle = HashMap<(String, u64), String>;
 
 /// Build a `(module, rva) -> name` map from a signature report so the
 /// vtable writer can label slots that match a known signature.
-pub fn name_oracle_from_signatures(
-    hits: &[crate::signatures::SignatureHit],
-) -> NameOracle {
+pub fn name_oracle_from_signatures(hits: &[crate::signatures::SignatureHit]) -> NameOracle {
     let mut out = NameOracle::new();
     for h in hits {
         if let (true, Some(rva)) = (h.found, h.rva) {
-            out.entry((h.module.clone(), rva)).or_insert_with(|| h.name.clone());
+            out.entry((h.module.clone(), rva))
+                .or_insert_with(|| h.name.clone());
         }
     }
     out
@@ -96,7 +95,11 @@ pub fn render_hpp(vts: &VTableMap, oracle: &NameOracle, build_number: Option<u32
     s.push_str("\n#pragma once\n");
     s.push_str("#include <cstddef>\n#include <cstdint>\n\n");
     if let Some(bn) = build_number {
-        writeln!(s, "namespace cs2::vtables {{ inline constexpr std::uint32_t CS2_BUILD = {bn}; }}\n").ok();
+        writeln!(
+            s,
+            "namespace cs2::vtables {{ inline constexpr std::uint32_t CS2_BUILD = {bn}; }}\n"
+        )
+        .ok();
     }
     s.push_str("namespace cs2::vtables {\n\n");
     for (module, ifaces) in vts {
@@ -116,7 +119,8 @@ pub fn render_hpp(vts: &VTableMap, oracle: &NameOracle, build_number: Option<u32
                 info.vtable_module,
                 info.vtable_rva,
                 info.methods.len(),
-            ).ok();
+            )
+            .ok();
             writeln!(s, "        namespace {} {{", ns).ok();
             for (idx, m) in info.methods.iter().enumerate() {
                 let name = oracle
@@ -127,7 +131,8 @@ pub fn render_hpp(vts: &VTableMap, oracle: &NameOracle, build_number: Option<u32
                     s,
                     "            inline constexpr std::ptrdiff_t {:<48} = {:>4}; // {} + 0x{:X}",
                     name, idx, m.module, m.rva,
-                ).ok();
+                )
+                .ok();
             }
             writeln!(s, "        }} // namespace {}\n", ns).ok();
         }
@@ -170,7 +175,8 @@ pub fn render_cs(vts: &VTableMap, oracle: &NameOracle, build_number: Option<u32>
                     s,
                     "            public const nint {:<48} = {:>4}; // {} + 0x{:X}",
                     name, idx, m.module, m.rva,
-                ).ok();
+                )
+                .ok();
             }
             writeln!(s, "        }}\n").ok();
         }
@@ -191,7 +197,11 @@ fn sanitize_ident(raw: &str) -> String {
             s.push('_');
         }
     }
-    if s.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+    if s.chars()
+        .next()
+        .map(|c| c.is_ascii_digit())
+        .unwrap_or(false)
+    {
         s.insert(0, '_');
     }
     s

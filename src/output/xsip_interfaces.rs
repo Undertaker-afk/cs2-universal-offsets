@@ -1,24 +1,24 @@
-use std::collections::BTreeMap;
 use std::fmt::Write;
 use std::fs;
 use std::path::Path;
 
-use anyhow::Result;
-use crate::analysis::InterfaceMap;
 use super::ident::slugify;
+use crate::analysis::InterfaceMap;
+use anyhow::Result;
 
 use crate::ui;
 
-pub fn dump(
-    out_dir: &Path,
-    interfaces: &InterfaceMap,
-) -> Result<()> {
+pub fn dump(out_dir: &Path, interfaces: &InterfaceMap) -> Result<()> {
     let xsip_interfaces_dir = out_dir.join("xsip_interfaces");
     fs::create_dir_all(&xsip_interfaces_dir)?;
 
     let total_modules = interfaces.len();
     for (i, (module_name, ifaces)) in interfaces.iter().enumerate() {
-        ui::progress(i, total_modules, &format!("dumping xsip-interfaces: {}", module_name));
+        ui::progress(
+            i,
+            total_modules,
+            &format!("dumping xsip-interfaces: {}", module_name),
+        );
         let module_slug = slugify(module_name.trim_end_matches(".dll"));
         let mut s = String::new();
 
@@ -37,7 +37,11 @@ pub fn dump(
         sorted_ifaces.sort_by_key(|(name, _)| *name);
 
         for (name, offset) in sorted_ifaces {
-            writeln!(s, "            constexpr std::ptrdiff_t {} = {:#X};", name, offset)?;
+            writeln!(
+                s,
+                "            constexpr std::ptrdiff_t {} = {:#X};",
+                name, offset
+            )?;
         }
 
         writeln!(s, "        }}")?;
@@ -47,7 +51,11 @@ pub fn dump(
         fs::write(xsip_interfaces_dir.join(format!("{}.hpp", module_slug)), s)?;
     }
 
-    ui::progress(total_modules, total_modules, "dumping xsip-interfaces: done");
+    ui::progress(
+        total_modules,
+        total_modules,
+        "dumping xsip-interfaces: done",
+    );
     println!();
     Ok(())
 }

@@ -172,9 +172,7 @@ pub fn section(title: &str) {
 }
 
 pub fn kv(key: &str, value: &str) {
-    println!(
-        "    {FG_GRAY}{BULLET}{RESET} {FG_SOFT}{key:<18}{RESET} {FG_WHITE}{value}{RESET}"
-    );
+    println!("    {FG_GRAY}{BULLET}{RESET} {FG_SOFT}{key:<18}{RESET} {FG_WHITE}{value}{RESET}");
 }
 
 pub fn info(msg: &str) {
