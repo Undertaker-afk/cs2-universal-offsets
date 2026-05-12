@@ -30,6 +30,7 @@ pub struct Class {
     pub parent_name: Option<String>,
     pub metadata: Vec<ClassMetadata>,
     pub fields: Vec<ClassField>,
+    pub size: i32,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -37,6 +38,7 @@ pub struct ClassField {
     pub name: String,
     pub type_name: String,
     pub offset: i32,
+    pub size: i32,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -115,6 +117,7 @@ fn read_class_binding(
         parent_name,
         metadata,
         fields,
+        size: binding.size,
     })
 }
 
@@ -134,21 +137,79 @@ fn read_class_binding_fields(
         }
 
         let name = mem.read_utf8_lossy(field.name.address(), 128).data_part()?;
-        let r#type = mem.read_ptr(field.r#type).data_part()?;
+        let type_ptr = field.r#type;
+        let r#type = mem.read_ptr(type_ptr).data_part()?;
 
         let type_name = mem
             .read_utf8_lossy(r#type.name.address(), 128)
             .data_part()?
             .replace(" ", "");
 
+        let size = get_type_size(mem, type_ptr).unwrap_or(0);
+
         acc.push(ClassField {
             name,
             type_name,
             offset: field.offset,
+            size,
         });
 
         Ok(acc)
     })
+}
+
+fn get_type_size(mem: &mut impl MemoryView, type_ptr: Pointer64<SchemaType>) -> Result<i32> {
+    let r#type = mem.read_ptr(type_ptr).data_part()?;
+    match r#type.type_category {
+        SchemaTypeCategory::BuiltIn => {
+            let name = mem.read_utf8_lossy(r#type.name.address(), 128).data_part()?;
+            Ok(match name.as_str() {
+                "int8" | "uint8" | "bool" | "char" => 1,
+                "int16" | "uint16" => 2,
+                "int32" | "uint32" | "float32" => 4,
+                "int64" | "uint64" | "float64" => 8,
+                _ => 4,
+            })
+        }
+        SchemaTypeCategory::Ptr => Ok(8),
+        SchemaTypeCategory::Bitfield => Ok(4),
+        SchemaTypeCategory::FixedArray => unsafe {
+            let array = r#type.value.array;
+            let element_size = get_type_size(mem, array.element)?;
+            Ok(array.array_size as i32 * element_size)
+        },
+        SchemaTypeCategory::Atomic => match r#type.atomic_category {
+            SchemaAtomicCategory::TF => unsafe { Ok(r#type.value.atomic_tf.size) },
+            SchemaAtomicCategory::TTF => unsafe { Ok(r#type.value.atomic_ttf.size) },
+            _ => {
+                let name = mem.read_utf8_lossy(r#type.name.address(), 128).data_part()?;
+                Ok(match name.split('<').next().unwrap() {
+                    "CHandle" => 4,
+                    "CUtlVector" | "CNetworkUtlVectorBase" | "CUtlVectorEmbeddedNetworkVar" => 24,
+                    "CUtlString" => 8,
+                    "CUtlSymbolLarge" => 8,
+                    "CUtlLeanVector" => 16,
+                    "CAnimNetVar" => unsafe { get_type_size(mem, r#type.value.atomic.element)? },
+                    _ => 0,
+                })
+            }
+        },
+        SchemaTypeCategory::DeclaredClass => unsafe {
+            let binding = mem.read_ptr(r#type.value.class_binding).data_part()?;
+            Ok(binding.size)
+        },
+        SchemaTypeCategory::DeclaredEnum => unsafe {
+            let binding = mem.read_ptr(r#type.value.enum_binding).data_part()?;
+            Ok(match binding.alignment {
+                1 => 1,
+                2 => 2,
+                4 => 4,
+                8 => 8,
+                _ => 4,
+            })
+        },
+        _ => Ok(0),
+    }
 }
 
 fn read_class_binding_metadata(

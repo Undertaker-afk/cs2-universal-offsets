@@ -25,6 +25,8 @@ pub mod netvars;
 pub mod sdk_classes;
 pub mod verified;
 pub mod vtables;
+pub mod xsip_interfaces;
+pub mod xsip_sdk;
 
 enum Item<'a> {
     Buttons(&'a ButtonMap),
@@ -124,6 +126,10 @@ impl<'a> Output<'a> {
     /// so internal cheats can `static_assert` against the running game.
     pub fn dump_sdk_extras(&self, build_number: Option<u32>) -> Result<()> {
         let ts = self.timestamp.to_rfc3339();
+
+        // 0. xsip-style expanded SDK
+        xsip_sdk::dump(self.out_dir, &self.result.schemas)?;
+        xsip_interfaces::dump(self.out_dir, &self.result.interfaces)?;
 
         // 1. shared SCHEMA_FIELD macros
         // Render module headers first so we can iterate and write them below
