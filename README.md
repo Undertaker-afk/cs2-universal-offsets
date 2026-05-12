@@ -59,7 +59,19 @@ Useful flags:
 | `--skip-signatures` | off | skip the signatures pass |
 | `--cache <FILE>` | none | warm-start from a previous `signatures.json` |
 | `--no-sound` | off | silence the UI cues |
+| `--show-convar-values` | off | include current values of ConVars in dump |
+| `--use-mem-walk` | off | use real memory walking for advanced scanning |
+| `--html-report` | off | generate an interactive HTML report of the dump |
 | `-v / -vv / -vvv` | warn | terminal log verbosity (file log is always trace) |
+
+## New Features (v1.5)
+
+* **Expanded xsip-style SDK**: Generates a file-per-class C++ SDK in `include/xsip_sdk`.
+* **Interface Dumper**: Per-module `constexpr` interface offsets in `include/xsip_interfaces`.
+* **Confidence Scoring**: Each signature hit now includes a confidence score (0-100%).
+* **Hierarchy Visualization**: Generates a Graphviz `hierarchy.dot` of the engine's class tree.
+* **Advanced Reporting**: Comprehensive reports in JSON, Markdown, and HTML formats.
+* **Skeleton Analysers**: Added groundwork for ConVar, GameEvent, and ResourceSystem dumping.
 
 CI publishes a release binary on every `v*` tag — see the latest under
 [Releases](../../releases).

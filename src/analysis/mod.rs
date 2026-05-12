@@ -18,25 +18,35 @@ mod interfaces;
 mod offsets;
 mod rtti;
 mod schemas;
+mod convars;
+mod game_events;
+mod resources;
 mod skinchanger;
 mod vtables;
 
 pub use buttons::*;
+pub use convars::*;
+pub use game_events::*;
 pub use interfaces::*;
 pub use offsets::*;
+pub use resources::*;
 pub use schemas::*;
 pub use skinchanger::*;
 pub use vtables::*;
 
 /// Aggregated output of every analysis stage.
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize)]
 pub struct AnalysisResult {
     pub buttons: ButtonMap,
     pub interfaces: InterfaceMap,
     pub offsets: OffsetMap,
     pub schemas: SchemaMap,
+    #[serde(skip)]
     pub skinchanger: SkinchangerMap,
     pub vtables: VTableMap,
+    pub convars: ConVarMap,
+    pub game_events: GameEventMap,
+    pub resources: ResourceTree,
 }
 
 /// Run every static analyser against the live process.
@@ -44,9 +54,45 @@ pub struct AnalysisResult {
 /// Each stage is independent — a failure in one (e.g. a missing module) is
 /// logged and replaced with that stage's [`Default`] value so subsequent
 /// stages can still complete.
-pub fn analyze_all<P: Process + MemoryView>(process: &mut P) -> Result<AnalysisResult> {
+pub fn analyze_all<P: Process + MemoryView>(
+    process: &mut P,
+    show_convar_values: bool,
+) -> Result<AnalysisResult> {
     let buttons = analyze(process, buttons);
     info!("found {} buttons", buttons.len());
+
+    let convars = match convars(process, show_convar_values) {
+        Ok(c) => {
+            info!("found {} convars", c.len());
+            c
+        }
+        Err(e) => {
+            log::error!("convar walk failed: {}", e);
+            Default::default()
+        }
+    };
+
+    let game_events = match game_events(process) {
+        Ok(ge) => {
+            info!("found {} game events", ge.len());
+            ge
+        }
+        Err(e) => {
+            log::error!("game event walk failed: {}", e);
+            Default::default()
+        }
+    };
+
+    let resources = match resources(process) {
+        Ok(r) => {
+            info!("found {} resource types", r.len());
+            r
+        }
+        Err(e) => {
+            log::error!("resource walk failed: {}", e);
+            Default::default()
+        }
+    };
 
     let interfaces = analyze(process, interfaces);
     info!(
@@ -110,6 +156,9 @@ pub fn analyze_all<P: Process + MemoryView>(process: &mut P) -> Result<AnalysisR
         schemas,
         skinchanger,
         vtables,
+        convars,
+        game_events,
+        resources,
     })
 }
 

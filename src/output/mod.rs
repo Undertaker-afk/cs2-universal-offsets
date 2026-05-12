@@ -27,6 +27,8 @@ pub mod verified;
 pub mod vtables;
 pub mod xsip_interfaces;
 pub mod xsip_sdk;
+pub mod hierarchy;
+pub mod reports;
 
 enum Item<'a> {
     Buttons(&'a ButtonMap),

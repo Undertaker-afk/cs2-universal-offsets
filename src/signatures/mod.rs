@@ -96,6 +96,10 @@ pub struct SignatureHit {
     /// when the resolved RVA is outside `.text`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pattern_synth: Option<String>,
+    /// Confidence score (0.0 to 1.0) based on pattern uniqueness and
+    /// length.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub confidence: Option<f32>,
     pub found: bool,
     pub match_rva: Option<u64>,
     pub match_va: Option<u64>,
@@ -253,6 +257,7 @@ fn try_satisfy_from_cache(
         ida_tutorial: tutorials::for_signature(sig),
         bytes: capture_prologue(mc, res_rva),
         pattern_synth: synthesize_pattern(mc, res_rva),
+        confidence: Some(1.0), // Cache hits are 100% confident
         found: true,
         match_rva: Some(entry.match_rva as u64),
         match_va: Some(match_va),
@@ -464,6 +469,9 @@ fn scan_pattern(mc: &ModuleCache, sig: &Signature) -> SignatureHit {
         return SignatureHit::fail(sig, &e);
     }
 
+    let synth = synthesize_pattern(mc, res_rva);
+    let confidence = calculate_confidence(&bytes, &mask, matches);
+
     SignatureHit {
         name: display_name(sig.name),
         module: mc.name.clone(),
@@ -472,7 +480,8 @@ fn scan_pattern(mc: &ModuleCache, sig: &Signature) -> SignatureHit {
         prototype: opt_proto(sig.name, sig.prototype),
         ida_tutorial: tutorials::for_signature(sig),
         bytes: capture_prologue(mc, res_rva),
-        pattern_synth: synthesize_pattern(mc, res_rva),
+        pattern_synth: synth,
+        confidence: Some(confidence),
         found: true,
         match_rva: Some(match_rva as u64),
         match_va: Some(match_va),
@@ -482,6 +491,18 @@ fn scan_pattern(mc: &ModuleCache, sig: &Signature) -> SignatureHit {
         from_cache: false,
         error: None,
     }
+}
+
+fn calculate_confidence(bytes: &[u8], mask: &[bool], matches: u32) -> f32 {
+    if matches == 0 { return 0.0; }
+
+    let mut score = if matches == 1 { 0.8 } else { 0.2 };
+
+    // length bonus
+    let len = bytes.len() as f32;
+    score += (len / 100.0).min(0.2);
+
+    score
 }
 
 /// Read up to 24 bytes from the resolved RVA and format them as a
@@ -583,6 +604,7 @@ fn scan_string_ref(mc: &ModuleCache, sig: &Signature) -> SignatureHit {
                 ida_tutorial: tutorials::for_signature(sig),
                 bytes: capture_prologue(mc, fn_rva as u64),
                 pattern_synth: synthesize_pattern(mc, fn_rva as u64),
+                confidence: Some(0.95), // String refs are usually very stable
                 found: true,
                 match_rva: Some(hit as u64),
                 match_va: Some(match_va),
@@ -688,6 +710,7 @@ impl SignatureHit {
             ida_tutorial: tutorials::for_signature(sig),
             bytes: None,
             pattern_synth: None,
+            confidence: None,
             found: false,
             match_rva: None,
             match_va: None,

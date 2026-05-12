@@ -90,6 +90,18 @@ struct Args {
     #[arg(long)]
     no_sound: bool,
 
+    /// Enable ConVar value extraction (inline in dump)
+    #[arg(long)]
+    show_convar_values: bool,
+
+    /// Use real memory walking for signature generation / verification
+    #[arg(long)]
+    use_mem_walk: bool,
+
+    /// Generate an interactive HTML report
+    #[arg(long)]
+    html_report: bool,
+
     /// Path to a previous `signatures.json` to use as a hot cache.  When
     /// the cached `match_rva` still matches the recorded pattern bytes,
     /// the entry is satisfied without a full module scan.  If omitted the
@@ -143,9 +155,9 @@ fn main() -> Result<()> {
     let mut analysis_result: Option<analysis::AnalysisResult> = None;
 
     if !args.skip_offsets {
-        ui::section("Offsets, interfaces, buttons, schemas");
+        ui::section("Offsets, interfaces, buttons, schemas, convars, events");
         ui::sound(ui::Cue::Step);
-        match analysis::analyze_all(&mut process) {
+        match analysis::analyze_all(&mut process, args.show_convar_values) {
             Ok(result) => {
                 ui::ok(&format!(
                     "interfaces: {} across {} modules",
@@ -210,6 +222,20 @@ fn main() -> Result<()> {
                         "vtables: {} interfaces, {} method slots, {} RTTI class names",
                         total_vts, total_methods, total_rtti
                     ));
+                }
+
+                // Stage 3.5: Advanced reports & Hierarchy
+                if let Err(e) = output::reports::generate_reports(
+                    &session_dir,
+                    &result,
+                    &None, // updated later
+                    args.html_report,
+                ) {
+                    ui::warn(&format!("reports generator failed: {}", e));
+                }
+
+                if let Err(e) = output::hierarchy::generate(&session_dir, &result.schemas) {
+                    ui::warn(&format!("hierarchy generator failed: {}", e));
                 }
 
                 drop(out);
