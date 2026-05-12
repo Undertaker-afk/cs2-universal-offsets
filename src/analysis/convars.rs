@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use memflow::prelude::v1::*;
 
 pub type ConVarMap = BTreeMap<String, ConVar>;
@@ -24,24 +24,16 @@ struct ConVar_t {
     next: Pointer64<ConVar_t>,
 }
 
-pub fn convars<P: Process + MemoryView>(process: &mut P, show_values: bool) -> Result<ConVarMap> {
-    let tier0 = process.module_by_name("tier0.dll")?;
+pub fn convars<P: Process + MemoryView>(
+    process: &mut P,
+    show_values: bool,
+    sig_hits: &BTreeMap<String, umem>
+) -> Result<ConVarMap> {
+    // Use sig_hits instead of hardcoded pattern
+    let cvar_ptr_addr = sig_hits.get("CVar_ptr")
+        .ok_or_else(|| anyhow!("CVar_ptr signature not found"))?;
 
-    // Find CCvar head using pattern
-    let buf = process.read_raw(tier0.base, tier0.size as usize).data_part()?;
-    let mut save = [0u32; 2];
-    let view = pelite::pe64::PeView::from_bytes(&buf)?;
-
-    use pelite::pe64::Pe;
-    if !view.scanner().finds_code(pelite::pattern!("48 8b 0d ${'} 48 85 c9 74 1d 48 8b 01 ff 50 10"), &mut save) {
-        // Fallback pattern
-        if !view.scanner().finds_code(pelite::pattern!("48 8b 0d ${'} 48 85 c9 0f 84 ? ? ? ? 48 8b 01 ff 50 10"), &mut save) {
-             return Ok(BTreeMap::new());
-        }
-    }
-
-    let cvar_ptr: Pointer64<u64> = Pointer64::from(tier0.base + save[1]);
-    let cvar_inst = process.read_ptr(cvar_ptr).data_part()?;
+    let cvar_inst = process.read_ptr(Pointer64::<u64>::from(*cvar_ptr_addr)).data_part()?;
     if cvar_inst.is_null() { return Ok(BTreeMap::new()); }
 
     // In Source 2, the head of the list is at cvar_ptr + 0x40.
@@ -60,7 +52,6 @@ pub fn convars<P: Process + MemoryView>(process: &mut P, show_values: bool) -> R
 
         let mut val_str = String::new();
         if show_values {
-             // In CS2, the actual value is often reached through another pointer at node + 0x40.
              let var_ptr: Pointer64<u64> = Pointer64::from(node_ptr.address() + 0x40);
              if let Ok(var_inst) = process.read_ptr(var_ptr).data_part() {
                  if !var_inst.is_null() {

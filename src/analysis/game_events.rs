@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use memflow::prelude::v1::*;
 
 pub type GameEventMap = BTreeMap<String, GameEvent>;
@@ -36,23 +36,16 @@ struct GameEventFieldDescriptor_t {
     pad_0: [u8; 4],
 }
 
-pub fn game_events<P: Process + MemoryView>(process: &mut P) -> Result<GameEventMap> {
-    let client = process.module_by_name("client.dll")?;
-    let buf = process.read_raw(client.base, client.size as usize).data_part()?;
-    let view = pelite::pe64::PeView::from_bytes(&buf)?;
+pub fn game_events<P: Process + MemoryView>(
+    process: &mut P,
+    sig_hits: &BTreeMap<String, umem>
+) -> Result<GameEventMap> {
+    let mgr_ptr_addr = sig_hits.get("GameEventManager_ptr")
+        .ok_or_else(|| anyhow!("GameEventManager_ptr signature not found"))?;
 
-    use pelite::pe64::Pe;
-    let mut save = [0u32; 2];
-    if !view.scanner().finds_code(pelite::pattern!("48 8b 0d ${'} 48 8b 01 ff 50 20 48 85 c0"), &mut save) {
-         return Ok(BTreeMap::new());
-    }
-
-    let mgr_ptr: Pointer64<u64> = Pointer64::from(client.base + save[1]);
-    let mgr_inst = process.read_ptr(mgr_ptr).data_part()?;
+    let mgr_inst = process.read_ptr(Pointer64::<u64>::from(*mgr_ptr_addr)).data_part()?;
     if mgr_inst.is_null() { return Ok(BTreeMap::new()); }
 
-    // In Source 2, descriptors are often in a CUtlVector at mgr + 0x28.
-    // CUtlVector layout: T* data, int size, int capacity.
     let list_ptr: Pointer64<Pointer64<[Pointer64<GameEventDescriptor_t>]>> = Pointer64::from(mgr_inst + 0x28);
     let list_size: i32 = process.read(Address::from(mgr_inst + 0x30)).data_part()?;
 
@@ -66,6 +59,7 @@ pub fn game_events<P: Process + MemoryView>(process: &mut P) -> Result<GameEvent
                     if !desc_ptr.is_null() {
                         if let Ok(desc) = process.read_ptr(desc_ptr).data_part() {
                             let name = process.read_utf8_lossy(desc.name.address(), 128).data_part()?;
+                            if name.is_empty() { continue; }
 
                             let mut fields = Vec::new();
                             if !desc.fields.is_null() && desc.field_count > 0 && desc.field_count < 64 {

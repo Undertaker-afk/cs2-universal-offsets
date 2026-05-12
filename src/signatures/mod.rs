@@ -274,8 +274,8 @@ fn try_satisfy_from_cache(
 // Module cache — full image + PeView
 // ---------------------------------------------------------------------------
 
-struct ModuleCache {
-    name: String,
+pub(crate) struct ModuleCache {
+    pub(crate) name: String,
     base: u64,
     image: Vec<u8>,
     text_rva: u32,
@@ -498,14 +498,34 @@ fn scan_pattern(mc: &ModuleCache, sig: &Signature) -> SignatureHit {
 
 fn calculate_confidence(bytes: &[u8], mask: &[bool], matches: u32) -> f32 {
     if matches == 0 { return 0.0; }
+    if matches > 1 { return 0.1; }
 
-    let mut score = if matches == 1 { 0.8 } else { 0.2 };
+    let mut score = 0.4;
 
-    // length bonus
+    // Uniqueness bonus (we know matches == 1 here)
+    score += 0.3;
+
+    // Length bonus: longer patterns are more specific
     let len = bytes.len() as f32;
-    score += (len / 100.0).min(0.2);
+    score += (len / 48.0).min(0.2);
 
-    score
+    // Wildcard penalty: too many wildcards make a pattern fragile
+    let wildcards = mask.iter().filter(|&&m| !m).count() as f32;
+    let wildcard_ratio = if len > 0.0 { wildcards / len } else { 0.0 };
+    score -= (wildcard_ratio * 0.4).min(0.2);
+
+    // Instruction variety (entropy)
+    // We check for repeating bytes which often indicate padding or simple instructions
+    let unique_bytes = bytes.iter().collect::<std::collections::HashSet<_>>().len() as f32;
+    let entropy = if len > 0.0 { unique_bytes / len } else { 0.0 };
+    score += (entropy * 0.2).min(0.1);
+
+    // Bonus for starting with a common prologue
+    if !bytes.is_empty() && is_prologue(&bytes[0..1]) {
+        score += 0.1;
+    }
+
+    score.clamp(0.0, 1.0)
 }
 
 /// Read up to 24 bytes from the resolved RVA and format them as a

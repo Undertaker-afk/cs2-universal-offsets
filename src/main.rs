@@ -149,7 +149,84 @@ fn main() -> Result<()> {
     let pid = process.info().pid;
     ui::ok(&format!("attached to {} (pid {})", args.process_name, pid));
 
-    // --- stage 1: offsets --------------------------------------------------
+    // --- stage 1: signatures (PE/section aware) ---------------------------
+    let mut sigs_ok = true;
+    let mut sig_report: Option<signatures::SignatureReport> = None;
+    let mut sig_hits_map: BTreeMap<String, umem> = BTreeMap::new();
+
+    if !args.skip_signatures {
+        ui::section("Signatures (PE/section aware)");
+        ui::sound(ui::Cue::Step);
+
+        // Build the warm-start cache.  Explicit `--cache` wins.
+        let cache_path = args.cache.clone();
+        let cache = match &cache_path {
+            Some(p) => match SignatureCache::load(p) {
+                Ok(c) => {
+                    if !c.is_empty() {
+                        ui::info(&format!("warm cache from {} ({} entries)", p.display(), c.len()));
+                    }
+                    c
+                }
+                Err(e) => {
+                    ui::warn(&format!("cache load failed ({}): {}", p.display(), e));
+                    SignatureCache::default()
+                }
+            },
+            None => SignatureCache::default(),
+        };
+
+        match signatures::scan_all_with_cache(
+            &mut process,
+            signatures::database::CS2_SIGNATURES,
+            &cache,
+        ) {
+            Ok(report) => {
+                ui::ok(&format!(
+                    "{}/{} signatures resolved across {} module(s)",
+                    report.found,
+                    report.total,
+                    report.modules.len()
+                ));
+
+                for hit in &report.hits {
+                    if hit.found {
+                        if let Some(va) = hit.va {
+                            sig_hits_map.insert(hit.name.clone(), va);
+                        }
+                    }
+                }
+
+                let json_path = sigs_dir.join("signatures.json");
+                fs::write(&json_path, format_found_signatures(&report))?;
+                ui::ok(&format!("wrote {}", json_path.display()));
+
+                // Multi-language fan-out (C++ only — Rust output dropped).
+                fs::write(sigs_dir.join("signatures.hpp"), signatures::writers::render_hpp(&report.hits))?;
+                fs::write(sigs_dir.join("SIGNATURES.md"), signatures::writers::render_markdown(&report.hits))?;
+                fs::write(
+                    sigs_dir.join("ida_tutorials.json"),
+                    signatures::tutorials::render_json(signatures::database::CS2_SIGNATURES),
+                )?;
+
+                // Diff vs. previous session, if any.
+                if let Some(prev) = &cache_path
+                    && let Ok(diff) = signatures::diff::diff_against(prev, &report)
+                {
+                    let path = sigs_dir.join("diff.json");
+                    fs::write(&path, serde_json::to_string_pretty(&diff)?)?;
+                }
+
+                sig_report = Some(report);
+            }
+            Err(e) => {
+                sigs_ok = false;
+                ui::err(&format!("signatures pass failed: {}", e));
+            }
+        }
+    }
+
+    // --- stage 2: offsets --------------------------------------------------
     let mut offsets_ok = true;
     let mut build_number: Option<u32> = None;
     let mut analysis_result: Option<analysis::AnalysisResult> = None;
@@ -158,7 +235,7 @@ fn main() -> Result<()> {
         ui::section("Offsets, interfaces, buttons, schemas, convars, events");
         ui::sound(ui::Cue::Step);
         ui::progress(0, 100, "initializing analysers");
-        match analysis::analyze_all(&mut process, args.show_convar_values) {
+        match analysis::analyze_all(&mut process, args.show_convar_values, &sig_hits_map) {
             Ok(result) => {
                 ui::ok(&format!(
                     "interfaces: {} across {} modules",
@@ -250,119 +327,43 @@ fn main() -> Result<()> {
         }
     }
 
-    // --- stage 2: signatures ----------------------------------------------
-    let mut sigs_ok = true;
-    let mut sig_report: Option<signatures::SignatureReport> = None;
+    if let Some(report) = sig_report.as_ref() {
+        // Write RIPREL signatures + a2x-style dwXxx aliases to
+        // sdk/offsets.{hpp,json}. The `analysis` block is what
+        // cs2-sdk.com / public CS2 cheats actually consume — it
+        // matches a2x/cs2-dumper byte-for-byte.
+        let empty_offsets = analysis::OffsetMap::new();
+        let offset_map = analysis_result
+            .as_ref()
+            .map(|r| &r.offsets)
+            .unwrap_or(&empty_offsets);
+        fs::write(
+            sdk_dir.join("offsets.hpp"),
+            signatures::offsets_writer::render_offsets_hpp(&report.hits, offset_map),
+        )?;
+        fs::write(
+            sdk_dir.join("offsets.json"),
+            signatures::offsets_writer::render_offsets_json(offset_map),
+        )?;
 
-    if !args.skip_signatures {
-        ui::section("Signatures (PE/section aware)");
-        ui::sound(ui::Cue::Step);
-
-        // Build the warm-start cache.  Explicit `--cache` wins.
-        let cache_path = args.cache.clone();
-        let cache = match &cache_path {
-            Some(p) => match SignatureCache::load(p) {
-                Ok(c) => {
-                    if !c.is_empty() {
-                        ui::info(&format!("warm cache from {} ({} entries)", p.display(), c.len()));
-                    }
-                    c
-                }
-                Err(e) => {
-                    ui::warn(&format!("cache load failed ({}): {}", p.display(), e));
-                    SignatureCache::default()
-                }
-            },
-            None => SignatureCache::default(),
-        };
-
-        match signatures::scan_all_with_cache(
-            &mut process,
-            signatures::database::CS2_SIGNATURES,
-            &cache,
-        ) {
-            Ok(report) => {
+        // Stand-alone buttons.{hpp,json,rs,zig} — every kbutton
+        // pointer (jump, attack, duck, …) keyed by its in-engine
+        // name. Drop-in compatible with a2x cs2_dumper::buttons.
+        if let Some(result) = analysis_result.as_ref()
+            && !result.buttons.is_empty()
+        {
+            if let Err(e) = output::write_buttons(
+                &sdk_dir,
+                &result.buttons,
+                &args.file_types,
+            ) {
+                ui::warn(&format!("buttons emit failed: {}", e));
+            } else {
                 ui::ok(&format!(
-                    "{}/{} signatures resolved across {} module(s)",
-                    report.found,
-                    report.total,
-                    report.modules.len()
+                    "buttons emitted ({} entries) -> sdk/buttons.{{{}}}",
+                    result.buttons.len(),
+                    args.file_types.join(",")
                 ));
-
-                let json_path = sigs_dir.join("signatures.json");
-                fs::write(&json_path, format_found_signatures(&report))?;
-                ui::ok(&format!("wrote {}", json_path.display()));
-
-                // Multi-language fan-out (C++ only — Rust output dropped).
-                fs::write(sigs_dir.join("signatures.hpp"), signatures::writers::render_hpp(&report.hits))?;
-                fs::write(sigs_dir.join("SIGNATURES.md"), signatures::writers::render_markdown(&report.hits))?;
-                fs::write(
-                    sigs_dir.join("ida_tutorials.json"),
-                    signatures::tutorials::render_json(signatures::database::CS2_SIGNATURES),
-                )?;
-
-                // Write RIPREL signatures + a2x-style dwXxx aliases to
-                // sdk/offsets.{hpp,json}. The `analysis` block is what
-                // cs2-sdk.com / public CS2 cheats actually consume — it
-                // matches a2x/cs2-dumper byte-for-byte.
-                let empty_offsets = analysis::OffsetMap::new();
-                let offset_map = analysis_result
-                    .as_ref()
-                    .map(|r| &r.offsets)
-                    .unwrap_or(&empty_offsets);
-                fs::write(
-                    sdk_dir.join("offsets.hpp"),
-                    signatures::offsets_writer::render_offsets_hpp(&report.hits, offset_map),
-                )?;
-                fs::write(
-                    sdk_dir.join("offsets.json"),
-                    signatures::offsets_writer::render_offsets_json(offset_map),
-                )?;
-
-                // Stand-alone buttons.{hpp,json,rs,zig} — every kbutton
-                // pointer (jump, attack, duck, …) keyed by its in-engine
-                // name. Drop-in compatible with a2x cs2_dumper::buttons.
-                if let Some(result) = analysis_result.as_ref()
-                    && !result.buttons.is_empty()
-                {
-                    if let Err(e) = output::write_buttons(
-                        &sdk_dir,
-                        &result.buttons,
-                        &args.file_types,
-                    ) {
-                        ui::warn(&format!("buttons emit failed: {}", e));
-                    } else {
-                        ui::ok(&format!(
-                            "buttons emitted ({} entries) -> sdk/buttons.{{{}}}",
-                            result.buttons.len(),
-                            args.file_types.join(",")
-                        ));
-                    }
-                }
-
-                // Diff vs. previous session, if any.
-                if let Some(prev) = &cache_path
-                    && let Ok(diff) = signatures::diff::diff_against(prev, &report)
-                {
-                    let path = sigs_dir.join("diff.json");
-                    fs::write(&path, serde_json::to_string_pretty(&diff)?)?;
-                    let n = diff.added.len() + diff.removed.len() + diff.shifted.len();
-                    if n > 0 {
-                        ui::info(&format!(
-                            "diff vs previous: +{} -{} ~{} (pattern changes: {})",
-                            diff.added.len(),
-                            diff.removed.len(),
-                            diff.shifted.len(),
-                            diff.pattern_changed.len(),
-                        ));
-                    }
-                }
-
-                sig_report = Some(report);
-            }
-            Err(e) => {
-                sigs_ok = false;
-                ui::err(&format!("signatures pass failed: {}", e));
             }
         }
     }
@@ -438,6 +439,10 @@ fn main() -> Result<()> {
             args.html_report,
         ) {
             ui::warn(&format!("final reports generator failed: {}", e));
+        }
+
+        if let Err(e) = output::llm::generate(&session_dir, result) {
+             ui::warn(&format!("llm.txt generator failed: {}", e));
         }
     }
 

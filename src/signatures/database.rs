@@ -499,6 +499,10 @@ pub static CS2_SIGNATURES: &[Signature] = &[
     // SoundSystem_ptr â€” soundsystem.dll g_pSoundSystem (CSoundSystem instance).
     Signature { name: "SoundSystem_ptr",                      module: "soundsystem.dll", needle: "48 8D 05 ? ? ? ? C3 CC CC CC CC CC CC CC CC 48 89 15", resolve: RIPREL_3, extra_off: 0, prototype: "" },
 
+    // Engine2 Singletons
+    Signature { name: "GameEventManager_ptr",                 module: "client.dll", needle: "48 8b 0d ? ? ? ? 48 8b 01 ff 50 20 48 85 c0", resolve: RIPREL_3, extra_off: 0, prototype: "" },
+    Signature { name: "ResourceSystem_ptr",                   module: "engine2.dll", needle: "48 8b 0d ? ? ? ? 48 8b 01 ff 50 18 48 8b c8", resolve: RIPREL_3, extra_off: 0, prototype: "" },
+
     // ---------------------------------------------------------------------
     // Cheat-derived globals (cs2 internal cheat, github/scros22).
     // Battle-tested at runtime on build 14160 (single match each in IDA).

@@ -8,6 +8,7 @@
 //! [a2x's `cs2-dumper`]: https://github.com/a2x/cs2-dumper
 
 use std::any::type_name;
+use std::collections::BTreeMap;
 
 use anyhow::Result;
 use log::{error, info};
@@ -59,13 +60,14 @@ use crate::ui;
 pub fn analyze_all<P: Process + MemoryView>(
     process: &mut P,
     show_convar_values: bool,
+    sig_hits: &BTreeMap<String, umem>,
 ) -> Result<AnalysisResult> {
     ui::progress(10, 100, "dumping buttons");
     let buttons = analyze(process, buttons);
     info!("found {} buttons", buttons.len());
 
     ui::progress(20, 100, "dumping convars");
-    let convars = match convars(process, show_convar_values) {
+    let convars = match convars(process, show_convar_values, sig_hits) {
         Ok(c) => {
             info!("found {} convars", c.len());
             c
@@ -77,7 +79,7 @@ pub fn analyze_all<P: Process + MemoryView>(
     };
 
     ui::progress(40, 100, "dumping game events");
-    let game_events = match game_events(process) {
+    let game_events = match game_events(process, sig_hits) {
         Ok(ge) => {
             info!("found {} game events", ge.len());
             ge
@@ -89,7 +91,7 @@ pub fn analyze_all<P: Process + MemoryView>(
     };
 
     ui::progress(60, 100, "dumping resources");
-    let resources = match resources(process) {
+    let resources = match resources(process, sig_hits) {
         Ok(r) => {
             info!("found {} resource types", r.len());
             r

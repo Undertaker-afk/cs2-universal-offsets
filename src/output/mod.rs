@@ -31,6 +31,7 @@ pub mod hierarchy;
 pub mod reports;
 pub mod convars;
 pub mod resources;
+pub mod llm;
 
 enum Item<'a> {
     Buttons(&'a ButtonMap),
