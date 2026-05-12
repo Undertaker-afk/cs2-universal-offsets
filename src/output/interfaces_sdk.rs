@@ -37,7 +37,11 @@ pub fn render_hpp(interfaces: &InterfaceMap, build_number: Option<u32>) -> Strin
     s.push_str("#pragma once\n\n");
     s.push_str("#include <cstdint>\n\n");
     if let Some(bn) = build_number {
-        writeln!(s, "namespace cs2::ifaces {{ inline constexpr std::uint32_t CS2_BUILD = {bn}; }}\n").ok();
+        writeln!(
+            s,
+            "namespace cs2::ifaces {{ inline constexpr std::uint32_t CS2_BUILD = {bn}; }}\n"
+        )
+        .ok();
     }
     s.push_str("namespace cs2::ifaces {\n\n");
     for (module, ifaces) in interfaces {

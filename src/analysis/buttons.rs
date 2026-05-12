@@ -1,37 +1,28 @@
 use std::collections::BTreeMap;
 
-use anyhow::{Result, bail};
+use anyhow::{Result, anyhow};
 
 use log::debug;
 
 use memflow::prelude::v1::*;
 
-use pelite::pattern;
-use pelite::pe64::{Pe, PeView};
-
 use crate::source2::KeyButton;
 
 pub type ButtonMap = BTreeMap<String, umem>;
 
-pub fn buttons<P: Process + MemoryView>(process: &mut P) -> Result<ButtonMap> {
+pub fn buttons<P: Process + MemoryView>(
+    process: &mut P,
+    sig_hits: &BTreeMap<String, umem>,
+) -> Result<ButtonMap> {
     let module = process.module_by_name("client.dll")?;
 
-    let buf = process
-        .read_raw(module.base, module.size as _)
+    let list_ptr_addr = sig_hits
+        .get("ButtonList_ptr")
+        .ok_or_else(|| anyhow!("ButtonList_ptr signature not found"))?;
+
+    let list_head = process
+        .read_addr64(Pointer64::<u64>::from(*list_ptr_addr).address())
         .data_part()?;
-
-    let view = PeView::from_bytes(&buf)?;
-
-    let mut save = [0; 2];
-
-    if !view
-        .scanner()
-        .finds_code(pattern!("488b15${'} 4885d2 74? 488b02 4885c0"), &mut save)
-    {
-        bail!("outdated button list pattern");
-    }
-
-    let list_head = process.read_addr64(module.base + save[1]).data_part()?;
 
     read_buttons(process, &module, list_head)
 }

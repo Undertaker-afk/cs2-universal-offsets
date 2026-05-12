@@ -81,10 +81,10 @@ pub fn skinchanger<P: Process + MemoryView>(process: &mut P) -> Result<Skinchang
     if let Ok(client_module) = process.module_by_name("client.dll") {
         let client_data = process.read_raw(client_module.base, client_module.size as usize)?;
         let client_pe = PeView::from_bytes(&client_data)?;
-        
+
         info!("scanning client.dll for skinchanger patterns");
         let client_results = client::scan_patterns(client_pe);
-        
+
         if !client_results.is_empty() {
             map.insert("client.dll".to_string(), client_results);
         }
@@ -92,12 +92,13 @@ pub fn skinchanger<P: Process + MemoryView>(process: &mut P) -> Result<Skinchang
 
     // Scan materialsystem2.dll patterns
     if let Ok(material_module) = process.module_by_name("materialsystem2.dll") {
-        let material_data = process.read_raw(material_module.base, material_module.size as usize)?;
+        let material_data =
+            process.read_raw(material_module.base, material_module.size as usize)?;
         let material_pe = PeView::from_bytes(&material_data)?;
-        
+
         info!("scanning materialsystem2.dll for material patterns");
         let material_results = materialsystem2::scan_patterns(material_pe);
-        
+
         if !material_results.is_empty() {
             map.insert("materialsystem2.dll".to_string(), material_results);
         }
@@ -105,8 +106,11 @@ pub fn skinchanger<P: Process + MemoryView>(process: &mut P) -> Result<Skinchang
 
     // Summary
     let total_patterns: usize = map.values().map(|m| m.len()).sum();
-    info!("skinchanger analysis complete: found {} patterns across {} modules", 
-          total_patterns, map.len());
+    info!(
+        "skinchanger analysis complete: found {} patterns across {} modules",
+        total_patterns,
+        map.len()
+    );
 
     Ok(map)
 }

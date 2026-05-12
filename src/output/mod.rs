@@ -19,12 +19,19 @@ mod formatter;
 // SDK-style emitters — every disk output the dumper produces is now
 // expressed in typed, cheat-developer-friendly form.
 pub mod amalgamation;
+pub mod convars;
+pub mod hierarchy;
 pub mod ident;
 pub mod interfaces_sdk;
+pub mod llm;
 pub mod netvars;
+pub mod reports;
+pub mod resources;
 pub mod sdk_classes;
 pub mod verified;
 pub mod vtables;
+pub mod xsip_interfaces;
+pub mod xsip_sdk;
 
 enum Item<'a> {
     Buttons(&'a ButtonMap),
@@ -125,9 +132,18 @@ impl<'a> Output<'a> {
     pub fn dump_sdk_extras(&self, build_number: Option<u32>) -> Result<()> {
         let ts = self.timestamp.to_rfc3339();
 
+        // 0. xsip-style expanded SDK
+        xsip_sdk::dump(self.out_dir, &self.result.schemas)?;
+        xsip_interfaces::dump(self.out_dir, &self.result.interfaces)?;
+
         // 1. shared SCHEMA_FIELD macros
         // Render module headers first so we can iterate and write them below
-        let module_data = sdk_classes::render_module_headers(&self.result.schemas, &self.result.buttons, build_number, &ts);
+        let module_data = sdk_classes::render_module_headers(
+            &self.result.schemas,
+            &self.result.buttons,
+            build_number,
+            &ts,
+        );
 
         // Render base macros (includes a rich set of global forward-decls / minimal types)
         let macros_path = self.out_dir.join("cs2sdk_macros.hpp");
@@ -148,7 +164,9 @@ impl<'a> Output<'a> {
                 let mut ns_end = ns_start;
                 while ns_end < body.len() {
                     let c = body.as_bytes()[ns_end] as char;
-                    if c.is_whitespace() || c == '{' { break; }
+                    if c.is_whitespace() || c == '{' {
+                        break;
+                    }
                     ns_end += 1;
                 }
                 current_ns = body[ns_start..ns_end].to_string();
@@ -167,7 +185,11 @@ impl<'a> Output<'a> {
                 let mut name_end = name_start;
                 while name_end < bytes.len() {
                     let c = bytes[name_end] as char;
-                    if c.is_ascii_alphanumeric() || c == '_' { name_end += 1; } else { break; }
+                    if c.is_ascii_alphanumeric() || c == '_' {
+                        name_end += 1;
+                    } else {
+                        break;
+                    }
                 }
                 if name_end > name_start {
                     let name = body[name_start..name_end].trim().to_string();
@@ -195,7 +217,11 @@ impl<'a> Output<'a> {
                     let mut type_end = type_start;
                     while type_end < body.len() {
                         let c = body.as_bytes()[type_end] as char;
-                        if c.is_ascii_alphanumeric() || c == '_' { type_end += 1; } else { break; }
+                        if c.is_ascii_alphanumeric() || c == '_' {
+                            type_end += 1;
+                        } else {
+                            break;
+                        }
                     }
                     if type_end > type_start {
                         let ty = &body[type_start..type_end];
@@ -205,15 +231,21 @@ impl<'a> Output<'a> {
                             .insert(ty.to_string());
                     }
                     search_idx = type_end;
-                } else { break; }
+                } else {
+                    break;
+                }
             }
         }
 
-        macros.push_str("\n// ============================================================================\n");
+        macros.push_str(
+            "\n// ============================================================================\n",
+        );
         macros.push_str("// Cross-module forward declarations (auto-generated)\n");
         macros.push_str("// These provide declaration-only stubs for types referenced across\n");
-        macros.push_str("// different sdk::<module> namespaces so headers can be included in any\n");
-        macros.push_str("// order. They are intentionally declaration-only; the real definitions\n");
+        macros
+            .push_str("// different sdk::<module> namespaces so headers can be included in any\n");
+        macros
+            .push_str("// order. They are intentionally declaration-only; the real definitions\n");
         macros.push_str("// live in the per-module headers.\n\n");
 
         for (ns, types_set) in &namespace_blocks {
@@ -239,21 +271,28 @@ impl<'a> Output<'a> {
             // `enum class ` definitions — only the namespace shell.
             // We still keep client.dll because of the buttons enum.
             let is_empty = !body.contains("class ") && !body.contains("enum class ");
-            if is_empty { continue; }
+            if is_empty {
+                continue;
+            }
             fs::write(self.out_dir.join(&file_name), body)?;
             if let Some(stem) = file_name.strip_suffix(".hpp") {
                 module_stems.push(stem.to_string());
             }
         }
 
-
         // 3. netvars (split from schema). Only emit if we actually got
         //    any networked fields — the schema walker can come back
         //    empty on builds where metadata layout drifted.
         let nvs = netvars::extract(&self.result.schemas);
         if !nvs.is_empty() {
-            fs::write(self.out_dir.join("netvars.json"), netvars::render_json(&nvs))?;
-            fs::write(self.out_dir.join("netvars.hpp"), netvars::render_hpp(&nvs, build_number))?;
+            fs::write(
+                self.out_dir.join("netvars.json"),
+                netvars::render_json(&nvs),
+            )?;
+            fs::write(
+                self.out_dir.join("netvars.hpp"),
+                netvars::render_hpp(&nvs, build_number),
+            )?;
         }
 
         // 4. interface accessor stubs
@@ -268,10 +307,14 @@ impl<'a> Output<'a> {
         // file in the output `sdk/` directory so the single-include
         // amalgamation includes modules in a stable dependency order.
         let mut ordered_stems = module_stems.clone();
-        let order_paths = [self.out_dir.join("sdk/module_order.txt"), self.out_dir.join("module_order.txt")];
+        let order_paths = [
+            self.out_dir.join("sdk/module_order.txt"),
+            self.out_dir.join("module_order.txt"),
+        ];
         for p in &order_paths {
             if let Ok(txt) = std::fs::read_to_string(p) {
-                let mut idx_map: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+                let mut idx_map: std::collections::BTreeMap<String, usize> =
+                    std::collections::BTreeMap::new();
                 for line in txt.lines() {
                     if let Some((idxs, name)) = line.split_once(':') {
                         if let Ok(idx) = idxs.parse::<usize>() {
@@ -356,7 +399,11 @@ impl<'a> Output<'a> {
     }
 
     fn write_banner(&self, fmt: &mut Formatter<'_>) -> Result<()> {
-        writeln!(fmt, "// Generated by cs2-sdk v{} — https://cs2-sdk.com", env!("CARGO_PKG_VERSION"))?;
+        writeln!(
+            fmt,
+            "// Generated by cs2-sdk v{} — https://cs2-sdk.com",
+            env!("CARGO_PKG_VERSION")
+        )?;
         writeln!(fmt, "// {}\n", self.timestamp)?;
 
         Ok(())
@@ -369,11 +416,7 @@ impl<'a> Output<'a> {
 /// Repo policy is C++-only output — .rs / .zig / .cs variants are
 /// no longer emitted (the buttons enum also lives inside
 /// `client_dll.hpp` for the typed-SDK consumers).
-pub fn write_buttons(
-    out_dir: &Path,
-    buttons: &ButtonMap,
-    _file_types: &[String],
-) -> Result<()> {
+pub fn write_buttons(out_dir: &Path, buttons: &ButtonMap, _file_types: &[String]) -> Result<()> {
     fs::create_dir_all(out_dir)?;
     let item = Item::Buttons(buttons);
     let timestamp = Utc::now().to_rfc3339();

@@ -84,9 +84,7 @@ fn try_resolve<P: MemoryView>(
     }
 
     // Read the 24-byte COL struct in one shot.
-    let col_bytes = process
-        .read_raw(Address::from(col_va), 24)
-        .data_part()?;
+    let col_bytes = process.read_raw(Address::from(col_va), 24).data_part()?;
     if col_bytes.len() < 24 {
         return Err(anyhow!("short COL read"));
     }
@@ -117,8 +115,7 @@ fn try_resolve<P: MemoryView>(
         .read_raw(Address::from(name_va), MAX_NAME_BYTES)
         .data_part()?;
     let nul = raw.iter().position(|&b| b == 0).unwrap_or(raw.len());
-    let mangled = std::str::from_utf8(&raw[..nul])
-        .map_err(|_| anyhow!("non-utf8 mangled name"))?;
+    let mangled = std::str::from_utf8(&raw[..nul]).map_err(|_| anyhow!("non-utf8 mangled name"))?;
 
     Ok(demangle(mangled))
 }
@@ -147,10 +144,7 @@ fn demangle(mangled: &str) -> String {
         .or_else(|| body.split_once("@@").map(|(s, _)| s))
         .unwrap_or(body);
 
-    let segments: Vec<&str> = scope_part
-        .split('@')
-        .filter(|s| !s.is_empty())
-        .collect();
+    let segments: Vec<&str> = scope_part.split('@').filter(|s| !s.is_empty()).collect();
 
     if segments.is_empty() {
         return mangled.to_string();

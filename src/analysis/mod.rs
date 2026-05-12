@@ -8,35 +8,46 @@
 //! [a2x's `cs2-dumper`]: https://github.com/a2x/cs2-dumper
 
 use std::any::type_name;
+use std::collections::BTreeMap;
 
 use anyhow::Result;
 use log::{error, info};
 use memflow::prelude::v1::*;
 
 mod buttons;
+mod convars;
+mod game_events;
 mod interfaces;
 mod offsets;
+mod resources;
 mod rtti;
 mod schemas;
 mod skinchanger;
 mod vtables;
 
 pub use buttons::*;
+pub use convars::*;
+pub use game_events::*;
 pub use interfaces::*;
 pub use offsets::*;
+pub use resources::*;
 pub use schemas::*;
 pub use skinchanger::*;
 pub use vtables::*;
 
 /// Aggregated output of every analysis stage.
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct AnalysisResult {
     pub buttons: ButtonMap,
     pub interfaces: InterfaceMap,
     pub offsets: OffsetMap,
     pub schemas: SchemaMap,
+    #[serde(skip)]
     pub skinchanger: SkinchangerMap,
     pub vtables: VTableMap,
+    pub convars: ConVarMap,
+    pub game_events: GameEventMap,
+    pub resources: ResourceTree,
 }
 
 /// Run every static analyser against the live process.
@@ -44,24 +55,83 @@ pub struct AnalysisResult {
 /// Each stage is independent — a failure in one (e.g. a missing module) is
 /// logged and replaced with that stage's [`Default`] value so subsequent
 /// stages can still complete.
-pub fn analyze_all<P: Process + MemoryView>(process: &mut P) -> Result<AnalysisResult> {
-    let buttons = analyze(process, buttons);
-    info!("found {} buttons", buttons.len());
+use crate::ui;
 
+pub fn analyze_all<P: Process + MemoryView>(
+    process: &mut P,
+    show_convar_values: bool,
+    sig_hits: &BTreeMap<String, umem>,
+) -> Result<AnalysisResult> {
+    ui::progress(10, 100, "dumping buttons");
+    let buttons = match buttons(process, sig_hits) {
+        Ok(b) => {
+            info!("found {} buttons", b.len());
+            b
+        }
+        Err(e) => {
+            log::error!("button walk failed: {}", e);
+            Default::default()
+        }
+    };
+
+    ui::progress(20, 100, "dumping convars");
+    let convars = match convars(process, show_convar_values, sig_hits) {
+        Ok(c) => {
+            info!("found {} convars", c.len());
+            c
+        }
+        Err(e) => {
+            log::error!("convar walk failed: {}", e);
+            Default::default()
+        }
+    };
+
+    ui::progress(40, 100, "dumping game events");
+    let game_events = match game_events(process, sig_hits) {
+        Ok(ge) => {
+            info!("found {} game events", ge.len());
+            ge
+        }
+        Err(e) => {
+            log::error!("game event walk failed: {}", e);
+            Default::default()
+        }
+    };
+
+    ui::progress(60, 100, "dumping resources");
+    let resources = match resources(process, sig_hits) {
+        Ok(r) => {
+            info!("found {} resource types", r.len());
+            r
+        }
+        Err(e) => {
+            log::error!("resource walk failed: {}", e);
+            Default::default()
+        }
+    };
+
+    ui::progress(80, 100, "dumping interfaces");
     let interfaces = analyze(process, interfaces);
     info!(
         "found {} interfaces across {} modules",
-        interfaces.iter().map(|(_, ifaces)| ifaces.len()).sum::<usize>(),
+        interfaces
+            .iter()
+            .map(|(_, ifaces)| ifaces.len())
+            .sum::<usize>(),
         interfaces.len(),
     );
 
     let offsets = analyze(process, offsets);
     info!(
         "found {} offsets across {} modules",
-        offsets.iter().map(|(_, offsets)| offsets.len()).sum::<usize>(),
+        offsets
+            .iter()
+            .map(|(_, offsets)| offsets.len())
+            .sum::<usize>(),
         offsets.len(),
     );
 
+    ui::progress(90, 100, "dumping schemas");
     let schemas = analyze(process, schemas);
     let (class_count, enum_count) = schemas
         .values()
@@ -85,7 +155,11 @@ pub fn analyze_all<P: Process + MemoryView>(process: &mut P) -> Result<AnalysisR
     let vtables = match vtables::vtables(process, &interfaces) {
         Ok(v) => {
             let total: usize = v.values().map(|m| m.len()).sum();
-            let methods: usize = v.values().flat_map(|m| m.values()).map(|i| i.methods.len()).sum();
+            let methods: usize = v
+                .values()
+                .flat_map(|m| m.values())
+                .map(|i| i.methods.len())
+                .sum();
             let rtti: usize = v
                 .values()
                 .flat_map(|m| m.values())
@@ -93,7 +167,10 @@ pub fn analyze_all<P: Process + MemoryView>(process: &mut P) -> Result<AnalysisR
                 .count();
             info!(
                 "dumped {} interface vtables ({} method slots, {} class names recovered via RTTI) across {} modules",
-                total, methods, rtti, v.len()
+                total,
+                methods,
+                rtti,
+                v.len()
             );
             v
         }
@@ -110,6 +187,9 @@ pub fn analyze_all<P: Process + MemoryView>(process: &mut P) -> Result<AnalysisR
         schemas,
         skinchanger,
         vtables,
+        convars,
+        game_events,
+        resources,
     })
 }
 

@@ -144,10 +144,18 @@ pub fn diff_against(previous_path: &Path, current: &SignatureReport) -> Result<D
         }
     }
 
-    added.sort_by(|a, b| (a.module.as_str(), a.name.as_str()).cmp(&(b.module.as_str(), b.name.as_str())));
-    removed.sort_by(|a, b| (a.module.as_str(), a.name.as_str()).cmp(&(b.module.as_str(), b.name.as_str())));
-    shifted.sort_by(|a, b| (a.module.as_str(), a.name.as_str()).cmp(&(b.module.as_str(), b.name.as_str())));
-    pattern_changed.sort_by(|a, b| (a.module.as_str(), a.name.as_str()).cmp(&(b.module.as_str(), b.name.as_str())));
+    added.sort_by(|a, b| {
+        (a.module.as_str(), a.name.as_str()).cmp(&(b.module.as_str(), b.name.as_str()))
+    });
+    removed.sort_by(|a, b| {
+        (a.module.as_str(), a.name.as_str()).cmp(&(b.module.as_str(), b.name.as_str()))
+    });
+    shifted.sort_by(|a, b| {
+        (a.module.as_str(), a.name.as_str()).cmp(&(b.module.as_str(), b.name.as_str()))
+    });
+    pattern_changed.sort_by(|a, b| {
+        (a.module.as_str(), a.name.as_str()).cmp(&(b.module.as_str(), b.name.as_str()))
+    });
 
     Ok(DiffReport {
         previous: previous_path.display().to_string(),

@@ -15,8 +15,8 @@
 
 use std::collections::BTreeMap;
 
-
 use anyhow::{Context, Result, anyhow};
+use iced_x86::{Decoder, DecoderOptions, Instruction, Mnemonic, Register};
 use memflow::prelude::v1::*;
 use pelite::pe64::{Pe, PeView};
 
@@ -25,9 +25,9 @@ use crate::ui;
 pub mod cache;
 pub mod database;
 pub mod diff;
-pub mod writers;
 pub mod offsets_writer;
 pub mod tutorials;
+pub mod writers;
 
 pub use cache::SignatureCache;
 
@@ -96,6 +96,10 @@ pub struct SignatureHit {
     /// when the resolved RVA is outside `.text`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pattern_synth: Option<String>,
+    /// Confidence score (0.0 to 1.0) based on pattern uniqueness and
+    /// length.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub confidence: Option<f32>,
     pub found: bool,
     pub match_rva: Option<u64>,
     pub match_va: Option<u64>,
@@ -113,7 +117,9 @@ pub struct SignatureHit {
     pub error: Option<String>,
 }
 
-fn default_match_count() -> u32 { 1 }
+fn default_match_count() -> u32 {
+    1
+}
 
 #[derive(Default, Debug, serde::Serialize)]
 pub struct SignatureReport {
@@ -139,8 +145,6 @@ pub fn scan_all_with_cache<P>(
 where
     P: Process + MemoryView,
 {
-
-
     // Pre-load each unique module image once so every signature reuses it.
     let mut module_cache: BTreeMap<String, ModuleCache> = BTreeMap::new();
     for sig in sigs {
@@ -253,6 +257,7 @@ fn try_satisfy_from_cache(
         ida_tutorial: tutorials::for_signature(sig),
         bytes: capture_prologue(mc, res_rva),
         pattern_synth: synthesize_pattern(mc, res_rva),
+        confidence: Some(1.0), // Cache hits are 100% confident
         found: true,
         match_rva: Some(entry.match_rva as u64),
         match_va: Some(match_va),
@@ -268,8 +273,8 @@ fn try_satisfy_from_cache(
 // Module cache — full image + PeView
 // ---------------------------------------------------------------------------
 
-struct ModuleCache {
-    name: String,
+pub(crate) struct ModuleCache {
+    pub(crate) name: String,
     base: u64,
     image: Vec<u8>,
     text_rva: u32,
@@ -464,15 +469,20 @@ fn scan_pattern(mc: &ModuleCache, sig: &Signature) -> SignatureHit {
         return SignatureHit::fail(sig, &e);
     }
 
+    let synth = synthesize_pattern(mc, res_rva);
+    let confidence = calculate_confidence(&bytes, &mask, matches);
+    let proto = opt_proto(sig.name, sig.prototype).or_else(|| recover_prototype(mc, res_rva));
+
     SignatureHit {
         name: display_name(sig.name),
         module: mc.name.clone(),
         resolve: kind_name(sig.resolve),
         pattern: sig.needle.to_string(),
-        prototype: opt_proto(sig.name, sig.prototype),
+        prototype: proto,
         ida_tutorial: tutorials::for_signature(sig),
         bytes: capture_prologue(mc, res_rva),
-        pattern_synth: synthesize_pattern(mc, res_rva),
+        pattern_synth: synth,
+        confidence: Some(confidence),
         found: true,
         match_rva: Some(match_rva as u64),
         match_va: Some(match_va),
@@ -482,6 +492,42 @@ fn scan_pattern(mc: &ModuleCache, sig: &Signature) -> SignatureHit {
         from_cache: false,
         error: None,
     }
+}
+
+fn calculate_confidence(bytes: &[u8], mask: &[bool], matches: u32) -> f32 {
+    if matches == 0 {
+        return 0.0;
+    }
+    if matches > 1 {
+        return 0.1;
+    }
+
+    let mut score = 0.4;
+
+    // Uniqueness bonus (we know matches == 1 here)
+    score += 0.3;
+
+    // Length bonus: longer patterns are more specific
+    let len = bytes.len() as f32;
+    score += (len / 48.0).min(0.2);
+
+    // Wildcard penalty: too many wildcards make a pattern fragile
+    let wildcards = mask.iter().filter(|&&m| !m).count() as f32;
+    let wildcard_ratio = if len > 0.0 { wildcards / len } else { 0.0 };
+    score -= (wildcard_ratio * 0.4).min(0.2);
+
+    // Instruction variety (entropy)
+    // We check for repeating bytes which often indicate padding or simple instructions
+    let unique_bytes = bytes.iter().collect::<std::collections::HashSet<_>>().len() as f32;
+    let entropy = if len > 0.0 { unique_bytes / len } else { 0.0 };
+    score += (entropy * 0.2).min(0.1);
+
+    // Bonus for starting with a common prologue
+    if !bytes.is_empty() && is_prologue(&bytes[0..1]) {
+        score += 0.1;
+    }
+
+    score.clamp(0.0, 1.0)
 }
 
 /// Read up to 24 bytes from the resolved RVA and format them as a
@@ -583,6 +629,7 @@ fn scan_string_ref(mc: &ModuleCache, sig: &Signature) -> SignatureHit {
                 ida_tutorial: tutorials::for_signature(sig),
                 bytes: capture_prologue(mc, fn_rva as u64),
                 pattern_synth: synthesize_pattern(mc, fn_rva as u64),
+                confidence: Some(0.95), // String refs are usually very stable
                 found: true,
                 match_rva: Some(hit as u64),
                 match_va: Some(match_va),
@@ -664,6 +711,75 @@ fn is_prologue(b: &[u8]) -> bool {
     }
 }
 
+pub(crate) fn recover_prototype(mc: &ModuleCache, rva: u64) -> Option<String> {
+    let lo = rva as usize;
+    let text_hi = (mc.text_rva + mc.text_size) as usize;
+    if lo >= text_hi {
+        return None;
+    }
+
+    let bytes = &mc.image[lo..text_hi.min(lo + 0x200)];
+    let mut decoder = Decoder::with_ip(64, bytes, mc.base + rva, DecoderOptions::NONE);
+
+    let mut instructions = Vec::new();
+    for instruction in &mut decoder {
+        instructions.push(instruction);
+        match instruction.mnemonic() {
+            Mnemonic::Ret | Mnemonic::Retf => break,
+            _ => {}
+        }
+    }
+
+    // Heuristic for argument count based on register usage (RCX, RDX, R8, R9)
+    let mut args = Vec::new();
+    let mut used_rcx = false;
+    let mut used_rdx = false;
+    let mut used_r8 = false;
+    let mut used_r9 = false;
+
+    for instr in &instructions {
+        // Very simple heuristic: if register is read before being written
+        // (ignoring complex control flow)
+        if !used_rcx && is_reg_read(instr, Register::RCX) {
+            used_rcx = true;
+            args.push("void* a1");
+        }
+        if !used_rdx && is_reg_read(instr, Register::RDX) {
+            used_rdx = true;
+            args.push("void* a2");
+        }
+        if !used_r8 && is_reg_read(instr, Register::R8) {
+            used_r8 = true;
+            args.push("void* a3");
+        }
+        if !used_r9 && is_reg_read(instr, Register::R9) {
+            used_r9 = true;
+            args.push("void* a4");
+        }
+    }
+
+    let args_str = if args.is_empty() {
+        "".to_string()
+    } else {
+        args.join(", ")
+    };
+    Some(format!(
+        "void* __fastcall sub_{:X}({})",
+        mc.base + rva,
+        args_str
+    ))
+}
+
+fn is_reg_read(instr: &Instruction, reg: Register) -> bool {
+    for i in 0..instr.op_count() {
+        if instr.op_register(i) == reg {
+            // This is a simplification
+            return true;
+        }
+    }
+    false
+}
+
 // ---------------------------------------------------------------------------
 // Utility
 // ---------------------------------------------------------------------------
@@ -688,6 +804,7 @@ impl SignatureHit {
             ida_tutorial: tutorials::for_signature(sig),
             bytes: None,
             pattern_synth: None,
+            confidence: None,
             found: false,
             match_rva: None,
             match_va: None,
@@ -707,7 +824,12 @@ fn display_name(raw: &str) -> String {
     if let Some(idx) = raw.rfind("::") {
         return raw[idx + 2..].to_string();
     }
-    if raw.starts_with("m_") || raw.starts_with("dw") || raw.starts_with("g_") || raw.starts_with("C_") || raw.ends_with("_t") {
+    if raw.starts_with("m_")
+        || raw.starts_with("dw")
+        || raw.starts_with("g_")
+        || raw.starts_with("C_")
+        || raw.ends_with("_t")
+    {
         return raw.to_string();
     }
 
@@ -716,7 +838,11 @@ fn display_name(raw: &str) -> String {
         let head = parts[0];
         let tail = parts[parts.len() - 1];
         let bad_tail = matches!(tail, "fn" | "ptr" | "call" | "func" | "function")
-            || tail.chars().next().map(|c| c.is_ascii_lowercase()).unwrap_or(true);
+            || tail
+                .chars()
+                .next()
+                .map(|c| c.is_ascii_lowercase())
+                .unwrap_or(true);
         let looks_like_class = head
             .chars()
             .next()
